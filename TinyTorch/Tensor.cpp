@@ -315,8 +315,7 @@ Tensor Tensor::unsqueeze(int32_t dim) const {
 
 Tensor::Tensor(TensorImpl &&data, bool requiresGrad,
                const std::shared_ptr<Function> &gradFunc)
-    : data_(std::make_shared<TensorImpl>()) {
-  *data_ = std::move(data);
+    : data_(std::make_shared<TensorImpl>(std::move(data))) {
   initAutograd(requiresGrad, gradFunc);
 }
 

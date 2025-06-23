@@ -56,8 +56,7 @@ class TensorImpl {
   ~TensorImpl() = default;
 
   TensorImpl(const TensorImpl &other);
-  TensorImpl(TensorImpl &&other) noexcept;
-
+  TensorImpl(TensorImpl &&other) noexcept = default;
   TensorImpl &operator=(const TensorImpl &other);
   TensorImpl &operator=(TensorImpl &&other) noexcept;
 
@@ -119,6 +118,9 @@ class TensorImpl {
   TensorImpl to(Device device);
   TensorImpl to(Dtype T) ;
   TensorImpl to(Dtype T) const;
+
+  template<typename T = float>
+  std::vector<T> toList() const;
   std::vector<float> toList() const;
   float item() const;
 
@@ -460,9 +462,14 @@ class TensorImpl {
 
   const Shape &strides() const { return strides_; }
 
-  float *data() { return data_; }
-
-  const float *data() const { return data_; }
+  template <typename T = float>
+  T* data() {
+    return reinterpret_cast<T*>(data_);
+  }
+  template <typename T = float>
+  const T* data() const {
+    return reinterpret_cast<const T*>(data_);
+  }
 
   TensorOperations *ops() const { return ops_; }
 

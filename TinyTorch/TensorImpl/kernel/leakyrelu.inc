@@ -1,7 +1,7 @@
 #pragma once
 
 template <int VEC_SIZE = 4>
-__global__ void leaky_relu_opt_kernel(const float* input, float* output, float ALPHA, int32_t n) {
+__global__ void leaky_relu_opt_kernel( float* output, const float* input, float ALPHA, int32_t n) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int idx = tid * VEC_SIZE;
     if (idx + VEC_SIZE > n) return;
@@ -19,7 +19,7 @@ __global__ void leaky_relu_opt_kernel(const float* input, float* output, float A
 }
 
 template <typename T>
-__global__ void leaky_relu_kernel(const T* input, T* output, bool* mask, float alpha, int n) {
+__global__ void leaky_relu_kernel(T* output, const T* input, bool* mask, float alpha, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         T x = input[idx];
@@ -30,7 +30,7 @@ __global__ void leaky_relu_kernel(const T* input, T* output, bool* mask, float a
 }
 
 template <>
-__global__ void leaky_relu_kernel<half>(const half* input, half* output, bool* mask, float alpha, int n) {
+__global__ void leaky_relu_kernel<half>( half* output, const half* input, bool* mask, float alpha, int n) {
      const half alpha_half = __float2half(alpha);
      const half zero = __float2half(0.0f);
 
@@ -44,7 +44,7 @@ __global__ void leaky_relu_kernel<half>(const half* input, half* output, bool* m
 }
 
 template <>
-__global__ void leaky_relu_kernel<float>(const float* input, float* output, bool* mask, float alpha, int n) {
+__global__ void leaky_relu_kernel<float>(float* output, const float* input, bool* mask, float alpha, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         float x = input[idx];
@@ -56,8 +56,8 @@ __global__ void leaky_relu_kernel<float>(const float* input, float* output, bool
 
 template <>
 __global__ void leaky_relu_kernel<__nv_bfloat16>(
+        __nv_bfloat16* output,
     const __nv_bfloat16* input,
-    __nv_bfloat16* output,
     bool* mask,
     float alpha,
     int n
@@ -76,7 +76,7 @@ __global__ void leaky_relu_kernel<__nv_bfloat16>(
 }
 
 template <typename T>
-__global__ void leaky_relu_backward(const T* input, T* output, const bool* mask, float alpha, int n){
+__global__ void leaky_relu_backward( T* output,  const T* input,const bool* mask, float alpha, int n){
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         float mask_float = mask[idx] ? 1.0f : alpha;
@@ -85,7 +85,7 @@ __global__ void leaky_relu_backward(const T* input, T* output, const bool* mask,
 }
 
 template <>
-__global__ void leaky_relu_backward<half>(const half* input, half* output, const bool* mask, float alpha, int n) {
+__global__ void leaky_relu_backward<half>( half* output, const half* input, const bool* mask, float alpha, int n) {
      const half alpha_half = __float2half(alpha);
      const half ones = __float2half(1.0f);
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -96,7 +96,7 @@ __global__ void leaky_relu_backward<half>(const half* input, half* output, const
 }
 
 template <>
-__global__ void leaky_relu_backward<float>(const float* input, float* output, const bool* mask, float alpha, int n) {
+__global__ void leaky_relu_backward<float>(float* output, const float* input,  const bool* mask, float alpha, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < n) {
         float mask_float = mask[idx] ? 1.0f : alpha;
@@ -106,8 +106,8 @@ __global__ void leaky_relu_backward<float>(const float* input, float* output, co
 
 template <>
 __global__ void leaky_relu_backward<__nv_bfloat16>(
-    const __nv_bfloat16* input,
     __nv_bfloat16* output,
+    const __nv_bfloat16* input,
     const bool* mask,
     float alpha,
     int n

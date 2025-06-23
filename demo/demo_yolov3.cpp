@@ -25,11 +25,12 @@ class BasicBlock : public nn::Module {
       auto residual = x;
       x = conv1(x);
       x = bn1(x);
-      x = Function::leakyrelu(x, 0.1);
+      x.leakyrelu();
       x = conv2(x);
       x = bn2(x);
       x = x + residual;
-      return Function::leakyrelu(x,0.1);
+      x.leakyrelu();
+      return x;
     }
  private:
   nn::Conv2D conv1;

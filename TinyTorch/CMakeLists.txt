@@ -26,6 +26,7 @@ else ()
     set(TinyTorch_src_cu "")
 endif ()
 
+
 file(GLOB_RECURSE TinyTorch_src "./*.cpp" "./TensorImpl/*.cpp")
 add_library(${PROJECT_NAME} ${TinyTorch_src} ${TinyTorch_src_cu} ${TinyTorch_src_cudnn})
 
@@ -43,6 +44,7 @@ if (${USE_CUDA})
     include_directories(${CUDA_INCLUDE_DIRS})
     target_link_libraries(${PROJECT_NAME} ${CUDA_LIBRARIES} ${CUDA_curand_LIBRARY} ${CUDA_cublas_LIBRARY})
 endif ()
+
 
 if (${USE_CUDNN})
     include_directories(${cuDNN_INCLUDE_DIR})
@@ -67,7 +69,6 @@ if (${USE_BLAS})
         target_link_libraries(${PROJECT_NAME} openblas)
     endif ()
 endif ()
-
 
 if (${USE_DEBUG})
     if(UNIX)

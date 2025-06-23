@@ -460,7 +460,6 @@ void TensorImpl::to_(Dtype T) {
     }
 }
 
-
 std::vector<float> TensorImpl::toList() const {
   if (device_ == Device::CPU) {
     return {data_, data_ + elemCount_};
@@ -473,7 +472,22 @@ std::vector<float> TensorImpl::toList() const {
     ops_->copyDeviceToHost(&hostData[0], data_, elemCount_ * sizeof(float));
     return hostData;
   }
+  return {};
+}
 
+template <typename T>
+std::vector<T> TensorImpl::toList() const {
+  if (device_ == Device::CPU) {
+    return {data_, data_ + elemCount_};
+  }
+  if (device_ == Device::CUDA) {
+    if (type_ != Dtype::float32){
+        LOGE("You have to change the type to float32 in GPU, then use toList()");
+    }
+    std::vector<T> hostData(elemCount_);
+    ops_->copyDeviceToHost(&hostData[0], data_, elemCount_ * sizeof(T));
+    return hostData;
+  }
   return {};
 }
 

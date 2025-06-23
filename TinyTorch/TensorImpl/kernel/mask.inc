@@ -43,16 +43,53 @@ __global__ void maskedSelectKernel(
     indices[pos] = idx;
   }
 }
+
+__global__ void maskedSelectWarpKernel(
+    const float* a,
+    const float* mask,
+    float* output,
+    float* indices,
+    int* globalCounter,
+    int n
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int warpId = threadIdx.x / 32;
+    int laneId = threadIdx.x % 32;
+
+    __shared__ int warpOffsets[32]; // 假设最多 32 个 warp/块
+    if (threadIdx.x < 32) warpOffsets[warpId] = 0;
+    __syncthreads();
+
+    unsigned validMask = __ballot_sync(0xFFFFFFFF, idx < n && mask[idx] != 0.0f);
+    int validCount = __popc(validMask);
+
+    if (laneId == 0) {
+        warpOffsets[warpId] = atomicAdd(globalCounter, validCount);
+    }
+    __syncthreads();
+
+    int warpBase = warpOffsets[warpId];
+    int localIdx = __popc(validMask & ((1 << laneId) - 1));
+
+    if (idx < n && mask[idx] != 0.0f) {
+        int globalPos = warpBase + localIdx;
+        output[globalPos] = a[idx];
+        indices[globalPos] = idx;
+    }
+}
+
 __global__ void scatterGradKernel(
-        const float* grad_output,
-        const int32_t* indices,
-        float* grad_input,
-        int num_valid
-    ) {
-        int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (tid < num_valid) {
-            int src_pos = tid;          // grad_output中的位置
-            int dst_pos = indices[tid]; // grad_input中的目标位置
-            grad_input[dst_pos] = grad_output[src_pos];
+    const float* grad_output,
+    const float* indices,
+    float* grad_input,
+    int num_valid,
+    int grad_input_size
+) {
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int i = tid; i < num_valid; i += blockDim.x * gridDim.x) {
+        int dst_pos = indices[i];
+        if (dst_pos >= 0 && dst_pos < grad_input_size) {
+            atomicAdd(&grad_input[dst_pos], grad_output[i]);
         }
-    };
+    }
+}

@@ -381,7 +381,7 @@ TensorImpl FuncMask::forward(const std::vector<const Tensor*>& inputs) {
     // notice! we could not save tensor b grad, tensor b for mask can't backpropagation
     const Tensor& a = *inputs[0];
     const Tensor& b = *inputs[1];
-    ASSERT(!b.isRequiresGrad());
+    ASSERT(!b.isRequiresGrad() && "the mask must be no Grad");
     //ASSERT(!b.isRequiresGrad() && "the mask must be no Grad");
     Tensor a_in_place = Tensor({0},a.isRequiresGrad());
     saveForBackward({&a_in_place});
