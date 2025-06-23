@@ -1,0 +1,64 @@
+cmake_minimum_required(VERSION 3.10)
+project(TinyTorch_pybind)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/../thirdparty/pybind11)
+
+# 源文件
+file(GLOB_RECURSE TinyTorch_pybind_src "bind.cpp")
+
+# 创建 Python 模块
+add_library(TinyTorch_pybind MODULE
+        ${TinyTorch_pybind_src}
+        )
+
+# 查找依赖的核心库
+target_link_libraries(TinyTorch_pybind PRIVATE
+        TinyTorch
+        pybind11::module
+        )
+
+# 设置 Python 绑定属性
+set_target_properties(TinyTorch_pybind PROPERTIES
+        PREFIX ""
+        OUTPUT_NAME "pytt"
+        CXX_VISIBILITY_PRESET "hidden"
+        VISIBILITY_INLINES_HIDDEN ON
+        )
+
+if(WIN32)
+    set_target_properties(TinyTorch_pybind PROPERTIES SUFFIX ".pyd")
+else()
+    set_target_properties(TinyTorch_pybind PROPERTIES SUFFIX ".so")
+endif()
+
+# 查找 Python
+find_package(Python 3.12 EXACT REQUIRED COMPONENTS Interpreter Development)
+
+target_include_directories(TinyTorch_pybind PRIVATE ${Python_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/../TinyTorch)
+target_link_libraries(TinyTorch_pybind PRIVATE ${Python_LIBRARIES} TinyTorch)
+
+if(NOT Python_EXECUTABLE)
+
+    find_program(Python_EXECUTABLE
+            NAMES python3 python
+            PATHS "D:/tools/miniconda"
+            DOC "Python interpreter path"
+            )
+    if(Python_EXECUTABLE)
+        set(Python3_EXECUTABLE ${Python_EXECUTABLE} CACHE PATH "Python 3 interpreter" FORCE)
+    endif()
+endif()
+
+# 编译设置
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_definitions(TinyTorch_pybind PRIVATE NDEBUG)
+else()
+    target_compile_definitions(TinyTorch_pybind PRIVATE DEBUG)
+endif()
+
+# 安装规则
+install(TARGETS TinyTorch_pybind
+        LIBRARY DESTINATION lib/python/site-packages
+        ARCHIVE DESTINATION lib/python/site-packages
+        RUNTIME DESTINATION bin
+        )
