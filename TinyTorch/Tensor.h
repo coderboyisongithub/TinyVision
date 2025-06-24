@@ -30,6 +30,11 @@ class FuncLeaf;
 class Tensor {
  public:
   Tensor() : data_(std::make_shared<TensorImpl>()) {}
+
+  #ifdef USE_PYBIND  // init from numpy
+  explicit Tensor(void* data, const Shape& shape, bool requiresGrad = false);
+  #endif
+
   explicit Tensor(TensorImpl &&data, bool requiresGrad = false,
                   const std::shared_ptr<Function> &gradFunc = nullptr);
 

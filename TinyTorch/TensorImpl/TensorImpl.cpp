@@ -94,6 +94,15 @@ TensorImpl::TensorImpl(TensorImpl &&other) noexcept {
   moveFrom(std::move(other));
 }
 
+#ifdef USE_PYBIND
+TensorImpl::TensorImpl(void* data, const Shape& shape, Device device) {
+  device_ = device;
+  shape_ = shape;
+  initMeta();  // 初始化 strides 等元数据
+  initData();  // 分配设备内存
+  ops_->copyHostToDevice(data_, data, elemCount_ * sizeof(float));
+}
+#endif
 
 TensorImpl &TensorImpl::operator=(const TensorImpl &other) {
   if (this != &other) {

@@ -77,5 +77,5 @@ endif ()
 
 if(USE_PYBIND)
     add_definitions(-DUSE_PYBIND)
-    add_subdirectory(pybind)  # Python绑定
+    add_subdirectory(pybind/src)  # Python绑定
 endif()

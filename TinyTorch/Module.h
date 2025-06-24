@@ -25,8 +25,6 @@ class Module {
   virtual void zeroGrad();
   virtual std::string name() const { return "Module"; }
   virtual Tensor forward(Tensor &x) { return {}; }
-  virtual Tensor forward(Tensor &x1, Tensor &x2) { return {}; }
-  virtual Tensor forward(Tensor &x1, Tensor &x2, Tensor &x3) { return {}; }
   virtual Tensor forward(std::vector<Tensor> &x) { return {}; }
   virtual std::vector<Tensor> forward(Tensor &x1, bool many) { return {}; }
   virtual std::vector<Tensor> forward(std::vector<Tensor> &x, bool many) { return {}; }

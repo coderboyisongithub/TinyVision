@@ -73,7 +73,6 @@ Tensor Sequential::forward(Tensor &input) {
   for (auto &module : modules_) {
     ret = (*module)(ret);
   }
-
   return ret;
 }
 

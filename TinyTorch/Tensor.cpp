@@ -313,9 +313,18 @@ Tensor Tensor::unsqueeze(int32_t dim) const {
   return Function::unsqueeze(*this, dim);
 }
 
+#ifdef USE_PYBIND
+Tensor::Tensor(void* data, const Shape& shape, bool requiresGrad)
+   : data_(std::make_shared<TensorImpl>()) {
+  *data_ = TensorImpl(data, shape);
+  initAutograd(requiresGrad);
+}
+#endif
+
 Tensor::Tensor(TensorImpl &&data, bool requiresGrad,
                const std::shared_ptr<Function> &gradFunc)
-    : data_(std::make_shared<TensorImpl>(std::move(data))) {
+    : data_(std::make_shared<TensorImpl>()) {
+  *data_ = std::move(data);
   initAutograd(requiresGrad, gradFunc);
 }
 

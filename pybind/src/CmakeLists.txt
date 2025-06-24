@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(TinyTorch_pybind)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/../thirdparty/pybind11)
+add_subdirectory(../../thirdparty/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/../thirdparty/pybind11)
 
 # 源文件
 file(GLOB_RECURSE TinyTorch_pybind_src "bind.cpp")
@@ -15,7 +15,25 @@ add_library(TinyTorch_pybind MODULE
 target_link_libraries(TinyTorch_pybind PRIVATE
         TinyTorch
         pybind11::module
+        pybind11::python_link_helper
         )
+
+if(WIN32)
+    # 将依赖库的 DLL 目录添加到模块的链接路径
+    set(DEPS_DLL_DIRS
+            "${CUDA_TOOLKIT_ROOT_DIR}/bin"
+            "${CUDNN_LIBRARY_DIR}"
+            "${OpenCV_DIR}/bin"
+            "../../thirdparty/OpenBLAS/win64-64/bin" # 根据实际路径调整
+            )
+
+    # 将路径转换为 Windows 格式并设置到链接标志
+    file(TO_NATIVE_PATH "${DEPS_DLL_DIRS}" NATIVE_DLL_DIRS)
+    string(REPLACE ";" "\\;" NATIVE_DLL_DIRS_ESC "${NATIVE_DLL_DIRS}")
+    set_target_properties(TinyTorch_pybind PROPERTIES
+            LINK_FLAGS "/DELAYLOAD:cusolver.dll /DELAYLOAD:cublas.dll -LIBPATH:\"${NATIVE_DLL_DIRS_ESC}\""
+            )
+endif()
 
 # 设置 Python 绑定属性
 set_target_properties(TinyTorch_pybind PROPERTIES
@@ -34,14 +52,14 @@ endif()
 # 查找 Python
 find_package(Python 3.12 EXACT REQUIRED COMPONENTS Interpreter Development)
 
-target_include_directories(TinyTorch_pybind PRIVATE ${Python_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/../TinyTorch)
+target_include_directories(TinyTorch_pybind PRIVATE ${Python_INCLUDE_DIRS} ../../TinyTorch)
 target_link_libraries(TinyTorch_pybind PRIVATE ${Python_LIBRARIES} TinyTorch)
 
 if(NOT Python_EXECUTABLE)
 
     find_program(Python_EXECUTABLE
             NAMES python3 python
-            PATHS "D:/tools/miniconda"
+            PATHS "D:/miniconda"
             DOC "Python interpreter path"
             )
     if(Python_EXECUTABLE)

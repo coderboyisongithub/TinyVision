@@ -56,15 +56,19 @@ class TensorImpl {
   ~TensorImpl() = default;
 
   TensorImpl(const TensorImpl &other);
-  TensorImpl(TensorImpl &&other) noexcept = default;
+  TensorImpl(TensorImpl &&other) noexcept;
+
   TensorImpl &operator=(const TensorImpl &other);
   TensorImpl &operator=(TensorImpl &&other) noexcept;
-
 #ifdef USE_OPENCV
   template <typename T, typename = std::enable_if_t<
         std::is_same_v<std::decay_t<T>, cv::Mat>>>
   explicit TensorImpl(T&& image,
                       Device device = getDefaultDevice(),bool bgr_to_rgb = true);
+#endif
+
+#ifdef USE_PYBIND
+  explicit TensorImpl(void* data, const Shape& shape, Device device = getDefaultDevice());
 #endif
 
   // create
@@ -506,6 +510,7 @@ class TensorImpl {
   static Device defaultDevice_;
   static Dtype defaultType_;
 };
+
 
 #ifdef USE_OPENCV
 template <typename T, typename>
