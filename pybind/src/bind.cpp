@@ -6,11 +6,46 @@
 using namespace TinyTorch;
 namespace py = pybind11;
 
+void bindSize2D(py::module &m) {
+  py::class_<Size2D>(m, "Size2D")
+      .def(py::init<int32_t>()) // 单参数构造
+      .def(py::init<int32_t, int32_t>()) // 双参数构造
+      .def_readwrite("h", &Size2D::h)
+      .def_readwrite("w", &Size2D::w)
+      .def("__repr__", [](const Size2D &s) {
+        return "Size2D(h=" + std::to_string(s.h) + ", w=" + std::to_string(s.w) + ")";
+      });
+}
+void bindMaxPool2d(py::module &m) {
+  m.def("max_pool2d",
+        [](const Tensor& input, const Size2D& kernelSize,
+           py::object strideObj, const Size2D& padding) {
+          std::optional<Size2D> stride;
+          if (!strideObj.is_none()) {
+            stride = strideObj.cast<Size2D>();
+          }
+          return Function::maxPool2d(input, kernelSize, stride, padding);
+        },
+        py::arg("input"),
+        py::arg("kernel_size"),
+        py::arg("stride") = py::none(),
+        py::arg("padding") = Size2D(0),
+        R"pbdoc(
+        Applies 2D max pooling over an input signal composed of several input planes.
+        Args:
+            input: Input tensor of shape (N, C, H_in, W_in)
+            kernel_size: Size of the pooling window (height, width)
+            stride: Stride of the pooling window. Default is kernel_size
+            padding: Padding added to all four sides of the input. Default is 0
+        Returns:
+            Tensor of shape (N, C, H_out, W_out)
+        )pbdoc"
+  );
+}
+
 PYBIND11_MODULE(pytt, m) {
   py::class_<Tensor>(m, "Tensor")
-
       .def(py::init<>())
-
       .def(py::init([](py::array_t<float> array, bool requires_grad) {
             if (array.ndim() < 1)
                 throw std::runtime_error("NumPy array must have at least 1 dimension");
@@ -90,43 +125,6 @@ PYBIND11_MODULE(pytt, m) {
       .def_static("linspace", &Tensor::linspace,
                   py::arg("start"), py::arg("end"), py::arg("steps"),
                   py::arg("requires_grad") = false);
-}
-
-void bindSize2D(py::module &m) {
-    py::class_<Size2D>(m, "Size2D")
-        .def(py::init<int32_t>()) // 单参数构造
-        .def(py::init<int32_t, int32_t>()) // 双参数构造
-        .def_readwrite("h", &Size2D::h)
-        .def_readwrite("w", &Size2D::w)
-        .def("__repr__", [](const Size2D &s) {
-            return "Size2D(h=" + std::to_string(s.h) + ", w=" + std::to_string(s.w) + ")";
-        });
-}
-void bindMaxPool2d(py::module &m) {
-    m.def("max_pool2d",
-        [](const Tensor& input, const Size2D& kernelSize,
-           py::object strideObj, const Size2D& padding) {
-            std::optional<Size2D> stride;
-            if (!strideObj.is_none()) {
-                stride = strideObj.cast<Size2D>();
-            }
-            return Function::maxPool2d(input, kernelSize, stride, padding);
-        },
-        py::arg("input"),
-        py::arg("kernel_size"),
-        py::arg("stride") = py::none(),
-        py::arg("padding") = Size2D(0),
-        R"pbdoc(
-        Applies 2D max pooling over an input signal composed of several input planes.
-        Args:
-            input: Input tensor of shape (N, C, H_in, W_in)
-            kernel_size: Size of the pooling window (height, width)
-            stride: Stride of the pooling window. Default is kernel_size
-            padding: Padding added to all four sides of the input. Default is 0
-        Returns:
-            Tensor of shape (N, C, H_out, W_out)
-        )pbdoc"
-    );
 }
 
 PYBIND11_MODULE(pytt, m) {

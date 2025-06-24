@@ -25,6 +25,7 @@ class Module {
   virtual void zeroGrad();
   virtual std::string name() const { return "Module"; }
   virtual Tensor forward(Tensor &x) { return {}; }
+  virtual Tensor forward(Tensor &x, Tensor &a) { return {}; }
   virtual Tensor forward(std::vector<Tensor> &x) { return {}; }
   virtual std::vector<Tensor> forward(Tensor &x1, bool many) { return {}; }
   virtual std::vector<Tensor> forward(std::vector<Tensor> &x, bool many) { return {}; }
@@ -147,7 +148,7 @@ class Sequential : public Module {
 class FlashSelfAttention : public Module {
  public:
   explicit FlashSelfAttention(int32_t inFeatures, int32_t head = 8, AttentionMethod method = AttentionMethod::FalshAttentionV2);
-  Tensor forward(Tensor &Q, Tensor &K, Tensor &V) override;
+  Tensor forward(std::vector<Tensor> &t) override;
  private:
   int32_t inFeatures_;
   int32_t head_;

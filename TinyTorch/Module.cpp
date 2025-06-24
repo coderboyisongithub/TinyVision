@@ -119,7 +119,10 @@ FlashSelfAttention::FlashSelfAttention(int32_t inFeatures, int32_t head, Attenti
     : inFeatures_(inFeatures),  head_(head), method_(method) {
 }
 
-Tensor FlashSelfAttention::forward(Tensor &Q, Tensor &K, Tensor &V) {
+Tensor FlashSelfAttention::forward(std::vector<Tensor> &qkv) {
+  auto Q = qkv[0];
+  auto K = qkv[1];
+  auto V = qkv[2];
   if (method_ == AttentionMethod::FalshAttentionV2) {
     return Function::flashattention(Q,K,V,head_);
   }
