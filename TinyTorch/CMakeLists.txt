@@ -56,6 +56,11 @@ if (${USE_OPENCV})
     target_link_libraries(${PROJECT_NAME} ${OpenCV_3RDPARTY_LIBS} ${OpenCV_LIBS})
 endif ()
 
+if (${USE_PYBIND})
+    target_compile_definitions(TinyTorch PRIVATE USE_PYBIND)
+    add_compile_definitions(USE_PYBIND)
+endif ()
+
 if (${USE_BLAS})
     add_definitions(-DUSE_BLAS)
     if (MSVC)

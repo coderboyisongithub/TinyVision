@@ -16,6 +16,9 @@ def load_pytt():
     else:
         # 旧版 Python 添加到 PATH
         os.environ['PATH'] = cuda_bin + os.pathsep + os.environ['PATH']
+    os.add_dll_directory(r"D:\tools\opencv\build\bin")
+    os.add_dll_directory(r"E:\C_project\TinyTorch-official\TinyTorch-main\thirdparty\OpenBLAS\win64-64\bin")  # OpenBLAS
+    os.add_dll_directory(r"E:\C_project\TinyTorch-official\TinyTorch-main\cmake-build-debug-visual-studio\pybind\src")  # 模块所在目录
     # 3. 预加载关键 DLL
     required_dlls = [
         "cudart64_12.dll",
@@ -32,7 +35,7 @@ def load_pytt():
                 sys.stderr.write(f"警告: 无法预加载 {dll}: {e}\n")
 
     # 4. 加载 pytt 模块
-    module_path = r"E:\C_project\TinyTorch-DET-beta-master\cmake-build-debug\pybind\pytt.pyd"
+    module_path = r"E:\C_project\TinyTorch-official\TinyTorch-main\cmake-build-debug-visual-studio\pybind\src\pytt.pyd"
 
     if not os.path.exists(module_path):
         raise FileNotFoundError(f"找不到 pytt 模块: {module_path}")

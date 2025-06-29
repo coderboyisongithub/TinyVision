@@ -27,8 +27,8 @@ class Module {
   virtual Tensor forward(Tensor &x) { return {}; }
   virtual Tensor forward(Tensor &x, Tensor &a) { return {}; }
   virtual Tensor forward(std::vector<Tensor> &x) { return {}; }
-  virtual std::vector<Tensor> forward(Tensor &x1, bool many) { return {}; }
-  virtual std::vector<Tensor> forward(std::vector<Tensor> &x, bool many) { return {}; }
+  virtual std::vector<Tensor> multi_return_forward(Tensor &x1) { return {}; }
+  virtual std::vector<Tensor> multi_return_forward(std::vector<Tensor> &x) { return {}; }
   template <typename... Args>
   Tensor operator()(Args &&...args) {
     return forward(std::forward<Args>(args)...);

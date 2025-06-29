@@ -14,14 +14,17 @@ public:
             x
         );
     }
-
     Tensor forward(std::vector<Tensor> &x) override {
         PYBIND11_OVERRIDE_PURE(
             Tensor, Module, forward, x);
     }
-    std::vector<Tensor> forward(std::vector<Tensor> &x) override {
+    std::vector<Tensor> multi_return_forward(Tensor &x) override {
         PYBIND11_OVERRIDE_PURE(
-            Tensor, Module, forward, x);
+            std::vector<Tensor>, Module, multi_forward, x);
+    }
+    std::vector<Tensor> multi_return_forward(std::vector<Tensor> &x) override {
+        PYBIND11_OVERRIDE_PURE(
+            std::vector<Tensor>, Module, multi_forward, x);
     }
 
 };

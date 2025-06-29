@@ -76,6 +76,6 @@ if (${BUILD_TEST})
 endif ()
 
 if(USE_PYBIND)
-    add_definitions(-DUSE_PYBIND)
+    add_compile_definitions(USE_PYBIND)
     add_subdirectory(pybind/src)  # Python绑定
 endif()

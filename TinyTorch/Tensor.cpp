@@ -313,7 +313,7 @@ Tensor Tensor::unsqueeze(int32_t dim) const {
   return Function::unsqueeze(*this, dim);
 }
 
-#ifdef USE_PYBIND
+#ifdef USE_PYBIND // init from numpy
 Tensor::Tensor(void* data, const Shape& shape, bool requiresGrad)
    : data_(std::make_shared<TensorImpl>()) {
   *data_ = TensorImpl(data, shape);

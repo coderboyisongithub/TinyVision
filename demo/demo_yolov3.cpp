@@ -67,7 +67,7 @@ class DarkNet : public nn::Module {
         initialize_weights();
     }
      std::string name() const override { return "DarkNet"; }
-    std::vector<Tensor> forward(Tensor &x, bool l) override {
+    std::vector<Tensor> multi_return_forward(Tensor &x) override {
         x = conv1(x);
         x = bn1(x);
         x = Function::relu(x);
@@ -138,8 +138,8 @@ class YoloBody : public nn::Module {
          registerModules({backbone_,last_layer0,last_layer1,last_layer1_conv,last_layer2_conv,last_layer2});
       }
 
-    std::vector<Tensor> forward(Tensor &x, bool l) override {
-            auto x_ = backbone_.forward(x, true);
+    std::vector<Tensor> multi_return_forward(Tensor &x) override {
+            auto x_ = backbone_.multi_return_forward(x);
             auto x2 =  x_[0];auto x1 =  x_[1];auto x0 =  x_[2];
             auto out0_branch = last_layer0[{0, 5}](x0);
             auto out0 = last_layer0[{5, static_cast<int>(last_layer0.getsize())}](out0_branch);
@@ -427,7 +427,7 @@ void train(TrainArgs &args, nn::Module &model, nn::Module &loss_fun, Device devi
     auto &data = batch[0].to(device);
     auto &target = batch[1].to(device);
     optimizer.zeroGrad();
-    auto output = model.forward(data, true);
+    auto output = model.multi_return_forward(data);
     output.push_back(target);
     auto loss = loss_fun.forward(output);
     loss.backward();

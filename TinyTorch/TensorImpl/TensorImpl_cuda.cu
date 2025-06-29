@@ -72,10 +72,11 @@ const char* cublasGetErrorString(cublasStatus_t status);
 #define CUDA_CHECK(call)                                                      \
   do {                                                                        \
     cudaError_t err = call;                                                   \
-    if (err != cudaSuccess) {                                                 \
+    if (err != cudaSuccess && err != cudaErrorCudartUnloading) {              \
       std::cerr << "CUDA error in file '" << __FILE__ << "' in line "         \
                 << __LINE__ << ": " << cudaGetErrorString(err) << " (" << err \
                 << ")" << std::endl;                                          \
+      ASSERT(false);                                                          \
       abort();                                                                \
     }                                                                         \
   } while (0)
