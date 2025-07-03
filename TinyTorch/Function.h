@@ -32,12 +32,11 @@ enum FunctionType {
   Function_LeakyRelu,
   Function_Flatten,
   Function_UnFlatten,
-  Function_FlashAttention,
   Function_UpSample,
   Function_ConCat,
   Function_Slice,
   Function_Mask,
-  Function_Attention,
+  Function_SelfAttention,
   Function_Squeeze,
   Function_Unsqueeze,
   Function_Reshape,
@@ -94,8 +93,7 @@ class Function : public std::enable_shared_from_this<Function> {
   static Tensor reshape(const Tensor& input, const Shape& shape);
   static Tensor linear(const Tensor& input, const Tensor& weight,
                        const Tensor& bias);
-  static Tensor flashattention(const Tensor& Q,const Tensor& K,
-   const Tensor& V, int32_t head);
+  static Tensor selfattention_qkv(const Tensor& input, int32_t head);
   static Tensor dropout(const Tensor& input, float p = 0.5f,bool training = true);
   static Tensor softmax(const Tensor& input, int32_t dim);
   static Tensor sigmoid(const Tensor& input);
@@ -123,7 +121,7 @@ class Function : public std::enable_shared_from_this<Function> {
   static Tensor nllloss(const Tensor& input, const Tensor& target,
                         LossReduction reduction = MEAN);
 
-  static Tensor mseLoss(const Tensor& input, const Tensor& target,
+  static Tensor mseloss(const Tensor& input, const Tensor& target,
                         LossReduction reduction = MEAN);
 
   static Tensor bceLoss(const Tensor& input, const Tensor& target,
@@ -362,22 +360,6 @@ class FuncLinear : public Function {
   DEFINE_FUNCTION_MEMBERS(Function_Linear)
 };
 
-class FuncFlashAttention : public Function {
- public:
-  explicit FuncFlashAttention(int32_t head): head_(head){}
-  DEFINE_FUNCTION_MEMBERS(Function_FlashAttention)
- private:
-  int32_t head_;
-};
-
-class FuncAttention : public Function {
- public:
-  explicit FuncAttention(int32_t head): head_(head){}
-  DEFINE_FUNCTION_MEMBERS(Function_Attention)
- private:
-  int32_t head_;
-};
-
 class FuncDropout : public Function {
  public:
   FuncDropout(float p, bool training) : p_(p), training_(training) {}
@@ -468,10 +450,19 @@ class FuncLayerNorm : public Function {
   explicit FuncLayerNorm(float eps = 1e-5)
       : eps_(eps) {}
   DEFINE_FUNCTION_MEMBERS(Function_LayerNorm)
-
  private:
-  float eps_ = 1e-5;
-  std::vector<int32_t> viewShape_;
+  float eps_;
+  TensorImpl mean_;
+  TensorImpl rstd_;
+};
+
+class FuncSelfAttention : public Function {
+ public:
+  explicit FuncSelfAttention(int32_t head_num)
+      : head_num_(head_num) {}
+  DEFINE_FUNCTION_MEMBERS(Function_SelfAttention)
+ private:
+  int32_t head_num_;
 };
 
 class FuncBatchNorm : public Function {

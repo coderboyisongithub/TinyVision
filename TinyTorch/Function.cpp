@@ -15,6 +15,7 @@
 
 namespace TinyTorch {
 
+
 #define FUNC_ENUM_TO_STRING(value) {value, #value}
 
 std::unordered_map<FunctionType, std::string> Function::funcTypeToString_ = {
@@ -32,7 +33,7 @@ std::unordered_map<FunctionType, std::string> Function::funcTypeToString_ = {
     FUNC_ENUM_TO_STRING(Function_Relu),
     FUNC_ENUM_TO_STRING(Function_Flatten),
     FUNC_ENUM_TO_STRING(Function_UnFlatten),
-    FUNC_ENUM_TO_STRING(Function_FlashAttention),
+    FUNC_ENUM_TO_STRING(Function_SelfAttention),
     FUNC_ENUM_TO_STRING(Function_UpSample),
     FUNC_ENUM_TO_STRING(Function_ConCat),
     FUNC_ENUM_TO_STRING(Function_Slice),
@@ -146,8 +147,8 @@ Tensor Function::reshape(const Tensor& input, const Shape& shape) {
   return std::make_shared<FuncReshape>(shape)->callForward({&input});
 }
 
-Tensor Function::flashattention(const Tensor& Q,const Tensor& K,const Tensor& V, int32_t head) {
-  return std::make_shared<FuncFlashAttention>(head)->callForward({&Q, &K, &V});
+Tensor Function::selfattention_qkv(const  Tensor& input, int32_t head) {
+  return std::make_shared<FuncSelfAttention>(head)->callForward({&input});
 }
 
 Tensor Function::linear(const Tensor& input, const Tensor& weight,
@@ -191,9 +192,9 @@ Tensor Function::conv1d(const Tensor& input, const Tensor& weight,
       ->callForward({&input, &weight, &bias});
 }
 
-Tensor Function::layerNorm(const Tensor& x, const Tensor& g, const Tensor& b, float eps) {
+Tensor Function::layerNorm(const Tensor& inp, const Tensor& weight, const Tensor& bias, float eps) {
   return std::make_shared<FuncLayerNorm>(eps)
-      ->callForward({&x, &g, &b});
+      ->callForward({&inp, &weight, &bias});
 }
 
 Tensor Function::batchNorm(const Tensor& input, Tensor& runningMean,
@@ -205,7 +206,7 @@ Tensor Function::batchNorm(const Tensor& input, Tensor& runningMean,
       ->callForward({&input, &weight, &bias});
 }
 
-Tensor Function::mseLoss(const Tensor& input, const Tensor& target,
+Tensor Function::mseloss(const Tensor& input, const Tensor& target,
                          LossReduction reduction) {
   return std::make_shared<FuncMSELoss>(reduction)->callForward(
       {&input, &target});
@@ -773,15 +774,35 @@ std::vector<TensorImpl> FuncReshape::backward(const TensorImpl& grad) {
   return ret;
 }
 
-TensorImpl FuncFlashAttention::forward(const std::vector<const Tensor*>& inputs) {
+TensorImpl FuncSelfAttention::forward(const std::vector<const Tensor*>& inputs) {
   saveForBackward(inputs);
-  auto output = TensorImpl::flashattentionv2(inputs[0]->data() ,
-    inputs[1]->data() , inputs[2]->data(), head_);
-  return output;
+  auto& input = inputs[0]->data();
+  int32_t B = inputs[0]->shape()[0];
+  int32_t T = inputs[0]->shape()[1];
+  int32_t C = inputs[0]->shape()[2];
+  TensorImpl preatt = TensorImpl::zeros({B,head_num_,T,T});
+  TensorImpl att = TensorImpl::zeros({B,head_num_,T,T});
+  TensorImpl qkvr = TensorImpl::zeros({B,T,3,C});
+  TensorImpl vaccum = TensorImpl::zeros({B,T,C});
+  auto ret = inputs[0]->data().ops()->attention_forward_qkv(inputs[0]->data(),qkvr,vaccum,att,preatt,head_num_);
+  auto preatt_t = Tensor(static_cast<TensorImpl>(preatt));
+  auto att_t = Tensor(static_cast<TensorImpl>(att));
+  auto qkvr_t = Tensor(static_cast<TensorImpl>(qkvr));
+  auto vaccum_t = Tensor(static_cast<TensorImpl>(vaccum));
+  saveForBackward({&preatt_t,&att_t,&qkvr_t,&vaccum_t});
+  return ret;
 }
 
-std::vector<TensorImpl> FuncFlashAttention::backward(const TensorImpl& grad) {
+std::vector<TensorImpl> FuncSelfAttention::backward(const TensorImpl& grad) {
+  const auto& savedTensors = getSavedTensors();
+  auto grad_output = grad.ops()->attention_backward_qkv(grad,
+                                                  savedTensors[0].data(),savedTensors[1].data(),
+                                                  savedTensors[2].data(),savedTensors[3].data(),
+                                                  head_num_);
   std::vector<TensorImpl> ret;
+  if (savedTensors[0].isRequiresGrad()) {
+      ret.push_back(grad_output[0]);
+  }
   return ret;
 }
 
@@ -1066,36 +1087,32 @@ TensorImpl FuncLayerNorm::forward(const std::vector<const Tensor*>& inputs) {
   auto& input = inputs[0]->data();
   auto& weight = inputs[1]->data();
   auto& bias = inputs[2]->data();
-
-  auto& shape = input.shape();
-  ASSERT(shape.size() == 3);
-  viewShape_ = {1, 1, shape[2]};
-  Tensor mean;
-  Tensor var;
-  Tensor inputNorm;
-  mean.data() = TensorImpl::mean(input, -1, true);
-  var.data() = TensorImpl::var(input, -1, false, true);
-  saveForBackward({inputs[0], &mean, &var});
-  inputNorm.data() = (input - mean.data()) / TensorImpl::sqrt(var.data() + eps_);
-  if (!weight.empty()) {
-    inputNorm.data() *= weight.view(viewShape_);
-  }
-  if (!bias.empty()) {
-    inputNorm.data() += bias.view(viewShape_);
-  }
-  return inputNorm.data();
+  ASSERT(input.device() == weight.device() && input.device() == bias.device());
+  ASSERT(input.type() == weight.type() && input.type() == bias.type());
+  ASSERT(input.shape().size() == 3);
+  auto mean = TensorImpl::zeros({input.shape()[0], input.shape()[1]},input.device(),input.type());
+  auto rstd = TensorImpl::zeros({input.shape()[0], input.shape()[1]},input.device(),input.type());
+  auto ret = input.ops()->layernorm_forward(input, mean, rstd, weight, bias, eps_);
+  mean_ = mean;
+  rstd_ = rstd;
+  saveForBackward(inputs);
+  return ret;
 }
 
 std::vector<TensorImpl> FuncLayerNorm::backward(const TensorImpl& grad) {
   const auto& savedTensors = getSavedTensors();
-  auto& input = savedTensors[0].data();
-  auto& weight = savedTensors[1].data();
-  auto& inputNorm = savedTensors[3].data();
-  auto& inputCentered = savedTensors[4].data();
-  auto& std = savedTensors[5].data();
-
+  auto out = savedTensors[0].data().ops()->layernorm_backward(grad, savedTensors[0].data(),savedTensors[1].data()
+                                                              ,mean_ , rstd_);
   std::vector<TensorImpl> ret;
-
+  if (savedTensors[0].isRequiresGrad()) {
+     ret.push_back(std::move(out[0]));
+  }
+  if (savedTensors[1].isRequiresGrad()) {
+     ret.push_back(std::move(out[1]));
+  }
+  if (savedTensors[2].isRequiresGrad()) {
+     ret.push_back(std::move(out[2]));
+  }
   return ret;
 }
 
