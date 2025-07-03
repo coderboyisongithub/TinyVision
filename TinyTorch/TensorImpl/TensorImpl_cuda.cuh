@@ -74,8 +74,6 @@ class TensorOpsCUDA : public TensorOperations {
   static TensorCudaCtx<T> getTensorCtx(const TensorImpl &t);
 
   TENSOR_OPS_DECLARE(, override)
-
-  
  protected:
   // op single
   template <typename OP>

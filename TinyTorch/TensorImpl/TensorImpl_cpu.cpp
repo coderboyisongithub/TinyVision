@@ -379,6 +379,8 @@ std::pair<TensorImpl, TensorImpl> TensorOpsCPU::reduceDim(const TensorImpl& t,
   return {values, indices};
 }
 
+
+
 template <typename Op>
 TensorImpl TensorOpsCPU::reduceMultiDim(const TensorImpl& t,
                                         const std::vector<int32_t>& dims,
@@ -471,6 +473,235 @@ void TensorOpsCPU::fillRandBernoulli_(TensorImpl& t, float p) {
   for (int32_t i = 0; i < t.elemCount_; i++) {
     t.data_[i] = distribution(generator);
   }
+}
+
+TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl& qkvr,
+                                 TensorImpl& att, TensorImpl& preatt, int32_t NH) {
+    // input is (B, T, 3C) Q,K,V
+    // preatt, att are (B, NH, T, T)
+    // output is (B, T, C)
+    int B = inp.shape()[0];
+    int T = inp.shape()[1];
+    int C = inp.shape()[2] / 3;
+    int C3 = C*3;
+    int hs = C / NH; // head size
+    float scale = 1.0 / sqrtf(hs);
+    auto ret = TensorImpl::zerosLike(inp);
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            for (int h = 0; h < NH; h++) {
+                const float* query_t = inp.data() + b * T * C3 + t * C3 + h * hs;
+                float* preatt_bth = preatt.data() + b*NH*T*T + h*T*T + t*T;
+                float* att_bth = att.data() + b*NH*T*T + h*T*T + t*T;
+                // pass 1: calculate query dot key and maxval
+                float maxval = -10000.0f; // TODO something better
+                for (int t2 = 0; t2 <= t; t2++) {
+                    const float* key_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
+                    // (query_t) dot (key_t2)
+                    float val = 0.0f;
+                    for (int i = 0; i < hs; i++) {
+                        val += query_t[i] * key_t2[i];
+                    }
+                    val *= scale;
+                    if (val > maxval) {
+                        maxval = val;
+                    }
+                    preatt_bth[t2] = val;
+                }
+                // pad with -INFINITY outside of autoregressive region for debugging comparisons
+                for (int t2 = t+1; t2 < T; t2++) {
+                    preatt_bth[t2] = -INFINITY;
+                }
+
+                // pass 2: calculate the exp and keep track of sum
+                float expsum = 0.0f;
+                for (int t2 = 0; t2 <= t; t2++) {
+                    float expv = expf(preatt_bth[t2] - maxval);
+                    expsum += expv;
+                    att_bth[t2] = expv;
+                }
+                float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
+
+                // pass 3: normalize to get the softmax
+                for (int t2 = 0; t2 < T; t2++) {
+                    if (t2 <= t) {
+                        att_bth[t2] *= expsum_inv;
+                    } else {
+                        // causal attention mask. not strictly necessary to set to zero here
+                        // only doing this explicitly for debugging and checking to PyTorch
+                        att_bth[t2] = 0.0f;
+                    }
+                }
+
+                // pass 4: accumulate weighted values into the output of attention
+                float* out_bth = ret.data() + b * T * C + t * C + h * hs;
+                for (int i = 0; i < hs; i++) { out_bth[i] = 0.0f; }
+                for (int t2 = 0; t2 <= t; t2++) {
+                    const float* value_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C*2; // +C*2 because it's value
+                    float att_btht2 = att_bth[t2];
+                    for (int i = 0; i < hs; i++) {
+                        out_bth[i] += att_btht2 * value_t2[i];
+                    }
+                }
+            }
+        }
+    }
+    return ret;
+}
+
+std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,TensorImpl& inp,
+                                               TensorImpl& qkvr, TensorImpl& vaccum, TensorImpl& att, int32_t NH) {
+    // inp/dinp are (B, T, 3C) Q,K,V
+    // att/datt/dpreatt are (B, NH, T, T)
+    // dout is (B, T, C)
+    TensorImpl datt = TensorImpl::zerosLike(att);
+    TensorImpl dpreatt = TensorImpl::zerosLike(att);
+    TensorImpl dinp = TensorImpl::zerosLike(inp);
+    int B = dout.shape()[0];
+    int T = dout.shape()[1];
+    int C = dout.shape()[2];
+    int C3 = C*3;
+    int hs = C / NH; // head size
+    float scale = 1.0 / sqrtf(hs);
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            for (int h = 0; h < NH; h++) {
+                float* att_bth = att.data() + b*NH*T*T + h*T*T + t*T;
+                float* datt_bth = datt.data() + b*NH*T*T + h*T*T + t*T;
+                float* dpreatt_bth = dpreatt.data() + b*NH*T*T + h*T*T + t*T;
+                float* dquery_t = dinp.data() + b * T * C3 + t * C3 + h * hs;
+                float* query_t = inp.data() + b * T * C3 + t * C3 + h * hs;
+
+                // backward pass 4, through the value accumulation
+                const float* dout_bth = dout.data() + b * T * C + t * C + h * hs;
+                for (int t2 = 0; t2 < T; t2++) { // ADJUSTED! this was t2 <= t (see note on function)
+                    float* value_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C*2; // +C*2 because it's value
+                    float* dvalue_t2 = dinp.data() + b * T * C3 + t2 * C3 + h * hs + C*2;
+                    for (int i = 0; i < hs; i++) {
+                        // in the forward pass this was:
+                        // out_bth[i] += att_bth[t2] * value_t2[i];
+                        // so now we have:
+                        datt_bth[t2] += value_t2[i] * dout_bth[i];
+                        dvalue_t2[i] += att_bth[t2] * dout_bth[i];
+                    }
+                }
+
+                // backward pass 2 & 3, the softmax
+                // note that softmax (like e.g. tanh) doesn't need the input (preatt) to backward
+                for (int t2 = 0; t2 <= t; t2++) {
+                    for (int t3 = 0; t3 <= t; t3++) {
+                        float indicator = t2 == t3 ? 1.0f : 0.0f;
+                        float local_derivative = att_bth[t2] * (indicator - att_bth[t3]);
+                        dpreatt_bth[t3] += scale * local_derivative * datt_bth[t2];
+                    }
+                }
+
+                // backward pass 1, the query @ key matmul
+                for (int t2 = 0; t2 <= t; t2++) {
+                    float* key_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
+                    float* dkey_t2 = dinp.data() + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
+                    for (int i = 0; i < hs; i++) {
+                        // in the forward pass this was:
+                        // preatt_bth[t2] += query_t[i] * key_t2[i]
+                        // so now we have:
+                        dquery_t[i] += key_t2[i] * dpreatt_bth[t2];
+                        dkey_t2[i] += query_t[i] * dpreatt_bth[t2];
+                    }
+                }
+            }
+        }
+    }
+    return {dinp, datt, dpreatt};
+}
+
+TensorImpl TensorOpsCPU::layernorm_forward(TensorImpl& a, TensorImpl& mean, TensorImpl& rstd,
+                        const TensorImpl& weight, const TensorImpl& bias, float eps) {
+    int B = a.shape()[0];
+    int T = a.shape()[1];
+    int C = a.shape()[2];
+    TensorImpl ret = TensorImpl::zerosLike(a);
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            // seek to the input position inp[b,t,:]
+            const float* x = a.data<float>() + b * T * C + t * C;
+            // calculate the mean
+            float m = 0.0f;
+            for (int i = 0; i < C; i++) {
+                m += x[i];
+            }
+            m = m/C;
+            // calculate the variance (without any bias correction)
+            float v = 0.0f;
+            for (int i = 0; i < C; i++) {
+                float xshift = x[i] - m;
+                v += xshift * xshift;
+            }
+            v = v/C;
+            // calculate the rstd
+            float s = 1.0f / sqrtf(v + eps);
+            // seek to the output position in out[b,t,:]
+            float* out_bt = ret.data<float>() + b * T * C + t * C;
+            for (int i = 0; i < C; i++) {
+                float n = (s * (x[i] - m)); // normalized output
+                float o =  n * weight.data()[i] + bias.data()[i] ; // scale and shift it
+                out_bt[i] = o; // write
+            }
+            // cache the mean and rstd for the backward pass later
+            mean.data_[b * T + t] = m;
+            rstd.data_[b * T + t] = s;
+        }
+    }
+    return ret;
+}
+
+std::vector<TensorImpl> TensorOpsCPU::layernorm_backward(const TensorImpl& dout, const TensorImpl& inp,
+                                                         const TensorImpl& weight,
+                                                        TensorImpl& mean, TensorImpl& rstd) {
+    TensorImpl dinp = TensorImpl::zerosLike(inp);
+    TensorImpl dweight = TensorImpl::zeros(weight.shape());
+    TensorImpl dbias = TensorImpl::zeros(weight.shape());
+    int B = inp.shape()[0];
+    int T = inp.shape()[1];
+    int C = inp.shape()[2];
+    for (int b = 0; b < B; b++) {
+        for (int t = 0; t < T; t++) {
+            const float* dout_bt = dout.data<float>() + b * T * C + t * C;
+            const float* inp_bt = inp.data<float>() + b * T * C + t * C;
+            float* dinp_bt = dinp.data<float>() + b * T * C + t * C;
+            const float mean_bt = mean.data<float>()[b * T + t];
+            const float rstd_bt = rstd.data<float>()[b * T + t];
+
+            // first: two reduce operations
+            float dnorm_mean = 0.0f;
+            float dnorm_norm_mean = 0.0f;
+            for (int i = 0; i < C; i++) {
+                float norm_bti = (inp_bt[i] - mean_bt) * rstd_bt;
+                float dnorm_i = weight.data<float>()[i] * dout_bt[i];
+                dnorm_mean += dnorm_i;
+                dnorm_norm_mean += dnorm_i * norm_bti;
+            }
+            dnorm_mean = dnorm_mean / C;
+            dnorm_norm_mean = dnorm_norm_mean / C;
+
+            // now iterate again and accumulate all the gradients
+            for (int i = 0; i < C; i++) {
+                float norm_bti = (inp_bt[i] - mean_bt) * rstd_bt;
+                float dnorm_i = weight.data<float>()[i] * dout_bt[i];
+                // gradient contribution to bias
+                dbias.data<float>()[i] += dout_bt[i];
+                // gradient contribution to weight
+                dweight.data<float>()[i] += norm_bti * dout_bt[i];
+                // gradient contribution to input
+                float dval = 0.0f;
+                dval += dnorm_i; // term 1
+                dval -= dnorm_mean; // term 2
+                dval -= norm_bti * dnorm_norm_mean; // term 3
+                dval *= rstd_bt; // final scale
+                dinp_bt[i] += dval;
+            }
+        }
+    }
+    return {dinp, dweight, dbias};
 }
 
 std::pair<TensorImpl, TensorImpl> TensorOpsCPU::from_mask(const TensorImpl& a,
@@ -1432,11 +1663,6 @@ std::vector<TensorImpl> TensorOpsCPU::split(
       copyOnDevice(dest2, src2, b * inner_size * elem_size);
   }
   return {grad1, grad2};
-}
-
-TensorImpl TensorOpsCPU::flash_attention_(const TensorImpl& Q, const TensorImpl& K,     \
-               const TensorImpl& V , int32_t head) {
-  throw std::runtime_error("We have not implement in CPU yet");
 }
 
 TensorImpl TensorOpsCPU::upsample_forward(const TensorImpl& Q, int32_t scale_factor) {

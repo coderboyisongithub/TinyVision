@@ -31,7 +31,7 @@ const char* cublasGetErrorString(cublasStatus_t status);
         DTYPE_CASE(Dtype::float32,   CUDA_R_32F, dtype)                       \
         DTYPE_CASE(Dtype::bfloat16,  CUDA_R_16BF, dtype)                      \
         DTYPE_CASE(Dtype::float16,   CUDA_R_16F, dtype)                       \
-        default: throw std::invalid_argument("Unsupported Dtype");            \
+        default: ASSERT("Unsupported data type" && false);                    \
     }                                                                         \
 
 #define DISPATCH_DTYPE_CONVERT_2_OP_1_TEMPLATE(dtype, FUNC, grid_size , block_size, ret, input, ...)            \
@@ -77,7 +77,6 @@ const char* cublasGetErrorString(cublasStatus_t status);
                 << __LINE__ << ": " << cudaGetErrorString(err) << " (" << err \
                 << ")" << std::endl;                                          \
       ASSERT(false);                                                          \
-      abort();                                                                \
     }                                                                         \
   } while (0)
 
@@ -99,7 +98,7 @@ const char* cublasGetErrorString(cublasStatus_t status);
       std::cerr << "CUBLAS error in file '" << __FILE__ << "' in line "  \
                 << __LINE__ << ": " << cublasGetErrorString(err) << " (" \
                 << err << ")" << std::endl;                              \
-      abort();                                                           \
+      ASSERT(false);                                                     \
     }                                                                    \
   } while (0)
 
@@ -110,7 +109,7 @@ const char* cublasGetErrorString(cublasStatus_t status);
       std::cerr << "CUDA kernel error in file '" << __FILE__ << "' in line "  \
                 << __LINE__ << ": " << cudaGetErrorString(err) << " (" << err \
                 << ")" << std::endl;                                          \
-      abort();                                                                \
+      ASSERT(false);                                                          \
     }                                                                         \
   } while (0)
 
@@ -1534,9 +1533,7 @@ void TensorOpsCUDA::gemm(float* c, const float* a, const float* b, int32_t m,
 }
 
 std::pair<TensorImpl, TensorImpl> TensorOpsCUDA::leakyrelu(const TensorImpl& a, float rate){
-  int32_t threads_per_block = 256;
   int32_t total_elems = a.numel();
-  int32_t blocks = (total_elems + threads_per_block - 1) / threads_per_block;
   auto ret = TensorImpl::shape(a.shape_,a.device_,a.type_);
   auto mask = TensorImpl::shape(a.shape_, a.device_, Dtype::int8);
   DISPATCH_DTYPE_CONVERT_2_OP_1_TEMPLATE(a.type(), leaky_relu_kernel,
@@ -1547,9 +1544,7 @@ std::pair<TensorImpl, TensorImpl> TensorOpsCUDA::leakyrelu(const TensorImpl& a, 
 
 
 TensorImpl TensorOpsCUDA::leakyrelu_backward(const TensorImpl& a, const TensorImpl& mask, float rate){
-  int32_t threads_per_block = 256;
   int32_t total_elems = a.numel();
-  int32_t blocks = (total_elems + threads_per_block - 1) / threads_per_block;
   auto output = TensorImpl::shape(a.shape_,a.device_,a.type_);
   DISPATCH_DTYPE_CONVERT_2_OP_1_TEMPLATE(a.type(), leaky_relu_backward,
       getGridSize(total_elems), getBlockSize(), output, a, mask.data<bool>(), rate, total_elems);
@@ -1647,6 +1642,55 @@ TensorImpl TensorOpsCUDA::from_mask_backward(
     return grad_input;
 }
 
+TensorImpl TensorOpsCUDA::layernorm_forward(TensorImpl& inp, TensorImpl& mean, TensorImpl& rstd,
+                        const TensorImpl& weight, const TensorImpl& bias, float eps) {
+   int totalValid = inp.numel();
+   int N = 0; int C = inp.shape()[2];
+   N = inp.shape()[0] * inp.shape()[1];
+   TensorImpl ret = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+   const int grid_size = N;
+   layernorm_forward_kernel<<<grid_size, getBlockSize()>>>(
+                ret.data_,
+                mean.data_,
+                rstd.data_,
+                inp.data_,
+                weight.data_,
+                bias.data_,
+                N,
+                C
+            );
+   CUDA_KERNEL_CHECK();
+   return  ret;
+}
+
+std::vector<TensorImpl> TensorOpsCUDA::layernorm_backward(const TensorImpl& dout, const TensorImpl& inp, const TensorImpl& weight,
+                                            TensorImpl& mean, TensorImpl& rstd) {
+   int totalValid = inp.numel();
+   int C = inp.shape()[2];
+   TensorImpl dinp = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+   int B = inp.shape()[0];
+   int T = inp.shape()[1];
+   TensorImpl dweight = TensorImpl::zeros(weight.shape(),inp.device(),inp.type());
+   TensorImpl dbias = TensorImpl::zeros(weight.shape(),inp.device(),inp.type());
+   size_t shared_mem_size = 2 * C * sizeof(float);
+   TensorImpl ret = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+   layernorm_backward_kernel3<<<getGridSize(totalValid), getBlockSize(), shared_mem_size>>>(
+                dinp.data_,
+                dweight.data_,
+                dbias.data_,
+                dout.data_,
+                inp.data_,
+                weight.data_,
+                mean.data_,
+                rstd.data_,
+                B,
+                T,
+                C
+            );
+   CUDA_KERNEL_CHECK();
+   return  {dinp, dweight, dbias};
+}
+
 TensorImpl TensorOpsCUDA::from_slice(const TensorImpl& a, std::vector<int> starts, std::vector<int> ends) {
     int32_t ndim = a.shape_.size();
 
@@ -1660,10 +1704,6 @@ TensorImpl TensorOpsCUDA::from_slice(const TensorImpl& a, std::vector<int> start
     // Step 2: Create new tensor
     TensorImpl result = TensorImpl::shape(new_shape, a.device_);
     int new_size = result.numel();
-    // Step 4: Launch kernel
-    int threads_per_block = 256;
-    int blocks = (new_size + threads_per_block - 1) / threads_per_block;
-
     int32_t *d_a_strides, *d_new_strides, *d_new_shape;
     int *d_starts;
     allocate(reinterpret_cast<void**>(&d_a_strides), ndim * sizeof(int32_t));
@@ -1678,7 +1718,7 @@ TensorImpl TensorOpsCUDA::from_slice(const TensorImpl& a, std::vector<int> start
 
     switch (ndim) {
         case 4:
-            from_slice_kernel<4><<<blocks, threads_per_block>>>(
+            from_slice_kernel<4><<<getGridSize(new_size), getBlockSize()>>>(
                     a.data_,                                    // a_data
                     d_a_strides,                          // a_strides
                     d_starts,                              // starts
@@ -1689,7 +1729,7 @@ TensorImpl TensorOpsCUDA::from_slice(const TensorImpl& a, std::vector<int> start
                 );
             break;
         case 5:
-            from_slice_kernel<5><<<blocks, threads_per_block>>>(
+            from_slice_kernel<5><<<getGridSize(new_size), getBlockSize()>>>(
                     a.data_,                                    // a_data
                     d_a_strides,                          // a_strides
                     d_starts,                              // starts
@@ -1700,7 +1740,7 @@ TensorImpl TensorOpsCUDA::from_slice(const TensorImpl& a, std::vector<int> start
                 );
             break;
         case 2:
-          from_slice_kernel<2><<<blocks, threads_per_block>>>(
+          from_slice_kernel<2><<<getGridSize(new_size), getBlockSize()>>>(
               a.data_,                                    // a_data
               d_a_strides,                          // a_strides
               d_starts,                              // starts
@@ -1711,7 +1751,7 @@ TensorImpl TensorOpsCUDA::from_slice(const TensorImpl& a, std::vector<int> start
           );
           break;
         case 1:
-          from_slice_kernel<1><<<blocks, threads_per_block>>>(
+          from_slice_kernel<1><<<getGridSize(new_size), getBlockSize()>>>(
               a.data_,                                    // a_data
               d_a_strides,                          // a_strides
               d_starts,                              // starts
@@ -1737,8 +1777,6 @@ void TensorOpsCUDA::from_slice_backward(TensorImpl& ret, const TensorImpl& b,
     int new_size = b.numel();
     int ndim = ret.shape().size();
     // Step 4: Launch kernel
-    int threads_per_block = 256;
-    int blocks = (new_size + threads_per_block - 1) / threads_per_block;
     int32_t *d_a_strides, *d_new_strides, *d_new_shape;
     int *d_starts;
 
@@ -1754,7 +1792,7 @@ void TensorOpsCUDA::from_slice_backward(TensorImpl& ret, const TensorImpl& b,
 
     switch (ndim) {
         case 4:
-            from_slice_kernel_backward<4><<<blocks, threads_per_block>>>(
+            from_slice_kernel_backward<4><<<getGridSize(new_size), getBlockSize()>>>(
                 ret.data_,                                    // a_data
                 d_a_strides,                          // a_strides
                 d_starts,                              // starts
@@ -1765,7 +1803,7 @@ void TensorOpsCUDA::from_slice_backward(TensorImpl& ret, const TensorImpl& b,
             );
             break;
         case 5:
-            from_slice_kernel_backward<5><<<blocks, threads_per_block>>>(
+            from_slice_kernel_backward<5><<<getGridSize(new_size), getBlockSize()>>>(
                 ret.data_,                                    // a_data
                 d_a_strides,                          // a_strides
                 d_starts,                              // starts
@@ -1776,7 +1814,7 @@ void TensorOpsCUDA::from_slice_backward(TensorImpl& ret, const TensorImpl& b,
             );
             break;
         case 2:
-          from_slice_kernel_backward<2><<<blocks, threads_per_block>>>(
+          from_slice_kernel_backward<2><<<getGridSize(new_size), getBlockSize()>>>(
               ret.data_,                                    // a_data
               d_a_strides,                          // a_strides
               d_starts,                              // starts
@@ -1787,7 +1825,7 @@ void TensorOpsCUDA::from_slice_backward(TensorImpl& ret, const TensorImpl& b,
           );
           break;
         case 1:
-         from_slice_kernel_backward<1><<<blocks, threads_per_block>>>(
+         from_slice_kernel_backward<1><<<getGridSize(new_size), getBlockSize()>>>(
               ret.data_,                                    // a_data
               d_a_strides,                          // a_strides
               d_starts,                              // starts
@@ -1901,8 +1939,6 @@ std::vector<TensorImpl> TensorOpsCUDA::split(const TensorImpl& a ,int32_t splitS
   for (int i = dim + 1; i < dimCount_; i++) {
     inner_size *= a.shape()[i];
   }
-  const int blockSize = 256;
-  const int gridSize = (outer_size * inner_size + blockSize - 1) / blockSize;
   int* d_shape;
   int* d_strides;
   cudaMalloc(&d_shape, dimCount_ * sizeof(int));
@@ -1912,7 +1948,7 @@ std::vector<TensorImpl> TensorOpsCUDA::split(const TensorImpl& a ,int32_t splitS
   cudaMemcpy(d_strides, a.strides_.data(), dimCount_ * sizeof(int),
              cudaMemcpyHostToDevice);
 
-  split_kernel<<<gridSize, blockSize>>>(a.data_, tensor_a.data_, tensor_b.data_,
+  split_kernel<<<getGridSize(outer_size * inner_size), getBlockSize()>>>(a.data_, tensor_a.data_, tensor_b.data_,
                                          d_strides, dim, splitSize,
                                         outer_size, a.shape_[dim], inner_size);
   cudaFree(d_shape);
@@ -1928,9 +1964,7 @@ TensorImpl TensorOpsCUDA::upsample_forward(const TensorImpl& a , int32_t scale_f
   int32_t h = a.shape_[2];
   int32_t w = a.shape_[3];
   if (scale_factor == 2 && N >= 256){
-    dim3 grid(N / kBlockSize, 1);
-    dim3 block(kBlockSize, 1);
-    UpsampleNearest2D2XForward<<<grid, block>>>(N, a.data_, h,
+    UpsampleNearest2D2XForward<<<getGridSize(N), getBlockSize()>>>(N, a.data_, h,
                                                 w, ret.data_);
     cudaDeviceSynchronize();
   }
@@ -1946,9 +1980,7 @@ TensorImpl TensorOpsCUDA::upsample_backward(const TensorImpl& a , int32_t scale_
   int32_t h = ret.shape_[2];
   int32_t w = ret.shape_[3];
   if (scale_factor == 2 && N >= 256){
-    dim3 grid(N / kBlockSize, 1);
-    dim3 block(kBlockSize, 1);
-    UpsampleNearest2D2XBackward<<<grid, block>>>(N, a.data_, h,
+    UpsampleNearest2D2XBackward<<<getGridSize(N), getBlockSize()>>>(N, a.data_, h,
                                                  w, ret.data_);
   }
   else
@@ -1956,8 +1988,144 @@ TensorImpl TensorOpsCUDA::upsample_backward(const TensorImpl& a , int32_t scale_
   CUDA_KERNEL_CHECK();
   return ret;
 }
-TensorImpl  TensorOpsCUDA::flash_attention_(const TensorImpl& Q, const TensorImpl& K, const TensorImpl& V , int32_t head){
-  throw std::runtime_error("We have not implement in CUDA yet");
+
+TensorImpl TensorOpsCUDA::attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl& qkvr,
+                                 TensorImpl& att, TensorImpl& preatt, int32_t NH) {
+    // inp is (B, T, 3C) QKV
+    // preatt, att are (B, NH, T, T)
+    // output is (B, T, C)
+    int B = inp.shape()[0];
+    int T = inp.shape()[1];
+    int C = inp.shape()[2] / 3;
+    int HS = C / NH; // head size
+    auto ret = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+    // permute and separate inp from (B, T, 3, NH, HS) to 3X (B, NH, T, HS)
+    float *q, *k, *v;
+    q = qkvr.data() + 0 * B * T * C;
+    k = qkvr.data() + 1 * B * T * C;
+    v = qkvr.data() + 2 * B * T * C;
+    int total_threads = B * NH * T * HS;
+    int block_size =  getBlockSize();
+    int num_blocks = ceil_div(total_threads, block_size);
+    permute_kernel<<<num_blocks, block_size>>>(q, k, v, inp.data(), B, T, NH, HS);
+    CUDA_KERNEL_CHECK();
+    // batched matrix multiply with cuBLAS
+    const float alpha = 1.0f;
+    const float beta = 0.0f;
+    CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
+                                     CUBLAS_OP_T, CUBLAS_OP_N,
+                                     T, T, HS,
+                                     &alpha,
+                                     k, HS, T * HS,
+                                     q, HS, T * HS,
+                                     &beta,
+                                     preatt.data(), T, T * T,
+                                     B * NH));
+    // multiply all elements of preatt elementwise by scale
+    float scale = 1.0 / sqrtf(HS);
+    int grid_size = ceil_div(B * NH * T * 32, block_size);
+    ASSERT(T % 4  == 0);
+    launch_softmax_forward(att.data(), scale, preatt.data(), B * NH, T , 0 ,block_size);
+    // new approach: first cuBLAS another batched matmul
+    // y = att @ v # (B, nh, T, T) @ (B, nh, T, hs) -> (B, nh, T, hs)
+    CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
+                                     CUBLAS_OP_N, CUBLAS_OP_N,
+                                     HS, T, T,
+                                     &alpha,
+                                     v, HS, T * HS,
+                                     att.data(), T, T * T,
+                                     &beta,
+                                     vaccum.data(), HS, T * HS,
+                                     B * NH));
+
+    // now unpermute
+    // y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+    num_blocks = ceil_div(B * T * C, block_size);
+    unpermute_kernel<<<num_blocks, block_size>>>(vaccum.data(), ret.data(), B, T, NH, HS);
+    CUDA_KERNEL_CHECK();
+    return ret;
+}
+
+std::vector<TensorImpl> TensorOpsCUDA::attention_backward_qkv(const TensorImpl& dout,TensorImpl& inp,
+                                               TensorImpl& qkvr, TensorImpl& vaccum, TensorImpl& att, int32_t NH) {
+    TensorImpl datt = TensorImpl::zerosLike(att,att.device(),att.type());
+    TensorImpl dpreatt = TensorImpl::zerosLike(att,att.device(),att.type());
+    TensorImpl dinp = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+    TensorImpl dqkvr = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+    TensorImpl dvaccum = TensorImpl::zerosLike(vaccum,vaccum.device(),vaccum.type());
+    int B = inp.shape()[0];
+    int T = inp.shape()[1];
+    int C = inp.shape()[2] / 3;
+    int HS = C / NH; // head size
+    const float alpha = 1.0f;
+    const float beta = 1.0f; // note beta = 1.0f so that we accumulate gradients (+=)
+    // unpack convenience pointers into q, k, v
+    const float *q, *k, *v;
+    q = qkvr.data() + 0 * B * T * C;
+    k = qkvr.data() + 1 * B * T * C;
+    v = qkvr.data() + 2 * B * T * C;
+    float *dq, *dk, *dv;
+    dq = dqkvr.data() + 0 * B * T * C;
+    dk = dqkvr.data() + 1 * B * T * C;
+    dv = dqkvr.data() + 2 * B * T * C;
+    int block_size =  getBlockSize();
+    // backward through the unpermute operation
+    int num_blocks = ceil_div(B * T * C, block_size);
+    unpermute_kernel_backward<<<num_blocks, block_size>>>(dvaccum.data(), dout.data(), B, T, NH, HS);
+    CUDA_KERNEL_CHECK();
+    // backward into datt
+    CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
+                            CUBLAS_OP_T, CUBLAS_OP_N,
+                            T, T, HS,
+                            &alpha,
+                            v, HS, T * HS,
+                            dvaccum.data(), HS, T * HS,
+                            &beta,
+                            datt.data(), T, T * T,
+                            B * NH));
+
+    // backward into dv
+    CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
+            CUBLAS_OP_N, CUBLAS_OP_T,
+            HS, T, T,
+            &alpha,
+            dvaccum.data(), HS, T * HS,
+            att.data(), T, T * T,
+            &beta,
+            dv, HS, T * HS,
+            B * NH));
+
+    // backward into preatt
+    int hs = C / NH; // head size
+    float scale = 1.0f / sqrtf(hs);
+    launch_softmax_backward(dpreatt.data(), datt.data(), att.data(),  B,  T,  C,  NH,  0 ,block_size);
+    CUDA_KERNEL_CHECK();
+    // backward into q
+    CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
+                            CUBLAS_OP_N, CUBLAS_OP_N,
+                            HS, T, T,
+                            &alpha,
+                            k, HS, T * HS,
+                            dpreatt.data(), T, T * T,
+                            &beta,
+                            dq, HS, T * HS,
+                            B * NH));
+    // backward into k
+    CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
+                            CUBLAS_OP_N, CUBLAS_OP_T,
+                            HS, T, T,
+                            &alpha,
+                            q, HS, T * HS,
+                            dpreatt.data(), T, T * T,
+                            &beta,
+                            dk, HS, T * HS,
+                            B * NH));
+
+    // backward into inp
+    num_blocks = ceil_div(B * NH * T * HS, block_size);
+    permute_kernel_backward<<<num_blocks, block_size>>>(dinp.data(), dq, dk, dv, B, T, NH, HS);
+    CUDA_KERNEL_CHECK();
+    return {dinp};
 }
 
 const char* curandGetErrorString(curandStatus_t status) {

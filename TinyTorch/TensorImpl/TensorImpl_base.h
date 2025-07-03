@@ -245,10 +245,20 @@ typedef enum ShapeCompatible_ {
   _H void from_slice_backward(TensorImpl& ret, const TensorImpl& b,            \
        std::vector<int> starts, std::vector<int> ends) _T;                     \
   _H std::vector<TensorImpl> split(const TensorImpl& a ,int32_t                \
-         splitSize,  int32_t dim, Shape a_shape, Shape b_shape) _T;
+         splitSize,  int32_t dim, Shape a_shape, Shape b_shape) _T;            \
+  _H TensorImpl layernorm_forward(TensorImpl& a, TensorImpl& mean,             \
+                        TensorImpl& rstd, const TensorImpl& weight,            \
+                        const TensorImpl& bias, float eps=1e-5f)  _T;          \
+  _H std::vector<TensorImpl> layernorm_backward(const TensorImpl& dout,        \
+  const TensorImpl& inp, const TensorImpl& weight,                             \
+  TensorImpl& mean, TensorImpl& rstd)  _T;                                     \
+  _H TensorImpl attention_forward_qkv(TensorImpl& inp                          \
+  , TensorImpl& vaccum, TensorImpl& qkvr,                                      \
+  TensorImpl& att, TensorImpl& preatt, int32_t NH) _T;                         \
+  _H std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,    \
+  TensorImpl& inp, TensorImpl& qkvr, TensorImpl& vaccum,                       \
+  TensorImpl& att, int32_t NH) _T;
 class TensorImpl;
-
-
 class TensorOperations {
  public:
   virtual ~TensorOperations() = default;

@@ -220,7 +220,7 @@ TEST(TEST_Function, func_relu) {
 TEST(TEST_Function, func_mseLoss_none) {
   Tensor x({{-0.3089f, 0.5301f, -0.0245f}, {1.5852f, 0.8954f, 0.7485f}}, true);
   Tensor y({{0.8397f, 1.7990f, -0.2738f}, {-0.8910f, -0.6746f, 0.3419f}}, true);
-  auto loss = Function::mseLoss(x, y, NONE);
+  auto loss = Function::mseloss(x, y, NONE);
   EXPECT_FLOAT_VEC_NEAR(loss.data().toList(),
                         {1.31928194, 1.6101073, 0.0621504858, 6.13156557,
                          2.46489978, 0.165323555});
@@ -236,7 +236,7 @@ TEST(TEST_Function, func_mseLoss_none) {
 TEST(TEST_Function, func_mseLoss_mean) {
   Tensor x({{-0.3089f, 0.5301f, -0.0245f}, {1.5852f, 0.8954f, 0.7485f}}, true);
   Tensor y({{0.8397f, 1.7990f, -0.2738f}, {-0.8910f, -0.6746f, 0.3419f}}, true);
-  auto loss = Function::mseLoss(x, y, MEAN);
+  auto loss = Function::mseloss(x, y, MEAN);
   EXPECT_FLOAT_EQ(loss.data().item(), 1.95888805);
   loss.backward();
   EXPECT_FLOAT_VEC_NEAR(x.getGrad().data().toList(),
@@ -292,7 +292,7 @@ TEST(TEST_Function, func_bceLoss_none) {
 TEST(TEST_Function, func_mseLoss_sum) {
   Tensor x({{-0.3089f, 0.5301f, -0.0245f}, {1.5852f, 0.8954f, 0.7485f}}, true);
   Tensor y({{0.8397f, 1.7990f, -0.2738f}, {-0.8910f, -0.6746f, 0.3419f}}, true);
-  auto loss = Function::mseLoss(x, y, SUM);
+  auto loss = Function::mseloss(x, y, SUM);
   EXPECT_FLOAT_EQ(loss.data().item(), 11.7533283);
   loss.backward();
   EXPECT_FLOAT_VEC_NEAR(
@@ -528,4 +528,35 @@ TEST(TEST_Function, func_batchNorm_2d) {
                         TensorImpl::zeros({input.numel()}).toList());
   EXPECT_FLOAT_VEC_NEAR(weight.getGrad().data().toList(), {0., 0., 0.});
   EXPECT_FLOAT_VEC_NEAR(bias.getGrad().data().toList(), {8., 8., 8.});
+}
+
+TEST(TEST_Function, func_layerNorm) {
+  auto input = Tensor::arange(1.f, 25.f, 1.f);  // 1 ~ 24
+  input = input.reshape({2, 3, 4});             // [2, 3, 4]
+  input.setRequiresGrad(true);
+  auto weight = Tensor::ones({4}, true);  // requires_grad = true
+  auto bias = Tensor::zeros({4}, true);
+  float eps = 1e-5f;
+  auto output = Function::layerNorm(input, weight, bias, eps);
+  EXPECT_THAT(output.shape(), ElementsAre(2, 3, 4));
+  EXPECT_FLOAT_VEC_NEAR(
+      output.data().toList(),
+      std::vector<float>({
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416
+      }));
+
+  output.backward(Tensor::onesLike(output));
+  auto input_grad = input.getGrad();
+  auto weight_grad = weight.getGrad();
+  auto bias_grad = bias.getGrad();
+  EXPECT_FLOAT_VEC_NEAR(bias_grad.data().toList(), {6.f, 6.f, 6.f, 6.f});
+  EXPECT_FLOAT_VEC_NEAR(weight_grad.data().toList(), {-8.0498, -2.6833,  2.6833,  8.0498});
+  for (auto g : input_grad.data().toList()) {
+    ASSERT_NEAR(std::abs(g), 0, 1e-3);
+  }
 }

@@ -586,3 +586,34 @@ TEST(TEST_cuda_kernel, large_matrix_indexing_fp16) {
     }
   }
 }
+
+TEST(TEST_cuda_kernel, func_layerNorm) {
+  auto input = Tensor::arange(1.f, 25.f, 1.f).to(Device::CUDA);  // 1 ~ 24
+  input = input.reshape({2, 3, 4});             // [2, 3, 4]
+  input.setRequiresGrad(true);
+  auto weight = Tensor::ones({4}, true).to(Device::CUDA);  // requires_grad = true
+  auto bias = Tensor::zeros({4}, true).to(Device::CUDA);
+  float eps = 1e-5f;
+  auto output = Function::layerNorm(input, weight, bias, eps);
+  EXPECT_THAT(output.shape(), ElementsAre(2, 3, 4));
+  EXPECT_FLOAT_VEC_NEAR(
+      output.data().toList(),
+      std::vector<float>({
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416,
+         -1.3416, -0.4472,  0.4472,  1.3416
+      }));
+
+  output.sum().backward();
+  auto input_grad = input.getGrad();
+  auto weight_grad = weight.getGrad();
+  auto bias_grad = bias.getGrad();
+  EXPECT_FLOAT_VEC_NEAR(bias_grad.data().toList(), {6.f, 6.f, 6.f, 6.f});
+  EXPECT_FLOAT_VEC_NEAR(weight_grad.data().toList(), {-8.0498, -2.6833,  2.6833,  8.0498});
+  for (auto g : input_grad.data().toList()) {
+    ASSERT_NEAR(std::abs(g), 0, 1e-3);
+  }
+}

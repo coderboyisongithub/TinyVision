@@ -3,17 +3,15 @@
  * @author 	: keith@robot9.me
  *
  */
-
+#include "../traceback.h"
 #include "TensorImpl.h"
-
 #include <cassert>
 #include <numeric>
-
 #include "TensorImpl_cpu.h"
+
 #ifdef USE_CUDA
 #include "TensorImpl_cuda.cuh"
 #endif
-#include "../Enums.h"
 namespace TinyTorch {
 
 #define TENSOR_DEVICE_AVAILABLE(device, ret)                            \
@@ -347,7 +345,7 @@ TensorImpl TensorImpl::arange(float start, float stop, float step,
 
 TensorImpl TensorImpl::linspace(float start, float end, int32_t steps,
                                 Device device) {
-  assert(steps > 0);
+  ASSERT(steps > 0);
   float step = 0;
   if (steps > 1) {
     step = (end - start) / ((float)steps - 1);
@@ -456,7 +454,7 @@ void TensorImpl::to_(Dtype T) {
     return;
   }
   if (device_ == Device::CPU) {
-     assert(false && "We only support data type in CUDA, please change the data device to CUDA");
+     ASSERT(false && "We only support data type in CUDA, please change the data device to CUDA");
   }
   auto oldType = type_;
   auto oldData = data_;
@@ -501,7 +499,7 @@ std::vector<T> TensorImpl::toList() const {
 }
 
 float TensorImpl::item() const {
-  assert(elemCount_ == 1);
+  ASSERT(elemCount_ == 1);
   if (device_ == Device::CPU) {
     return data_[0];
   }
@@ -1230,7 +1228,7 @@ TensorImpl TensorImpl::index(const std::vector<int32_t> &indices) const {
     retShape.push_back(shape_[i]);
   }
   auto retTensor = shape(retShape, device_);
-  assert(dimStride == retTensor.elemCount_);
+  ASSERT(dimStride == retTensor.elemCount_);
   ops_->copyOnDevice(retTensor.data_, &data_[dataIdx],
                      dimStride * sizeof(float));
   return retTensor;
@@ -1286,7 +1284,7 @@ void TensorImpl::indexPut_(const std::vector<int32_t> &indices,
     dataIdx += (idx >= 0 ? idx : idx + shape_[i]) * strides_[i];
   }
   int32_t dimStride = strides_[len - 1];
-  assert(val.elemCount_ == dimStride);
+  ASSERT(val.elemCount_ == dimStride);
   if (this->type() == Dtype::float16)
     copyToDevice(&(reinterpret_cast<half*>(data_))[dataIdx], val.data_,
                  dimStride * sizeof(half),
