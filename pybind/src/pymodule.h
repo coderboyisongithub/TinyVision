@@ -29,3 +29,28 @@ public:
 
 };
 }
+
+namespace  TinyTorch::data {
+class PyDataset : public TinyTorch::data::Dataset {
+public:
+    using TinyTorch::data::Dataset::Dataset;
+    size_t size() const override {
+        PYBIND11_OVERRIDE_PURE(
+            size_t,
+            TinyTorch::data::Dataset,
+            size
+        );
+    }
+    std::vector<TinyTorch::Tensor> getItem(size_t idx) override {
+        PYBIND11_OVERRIDE_PURE(
+            std::vector<TinyTorch::Tensor>,
+            TinyTorch::data::Dataset,
+            getItem,
+            idx
+        );
+    }
+};
+
+
+
+}

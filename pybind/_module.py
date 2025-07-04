@@ -41,7 +41,8 @@ class Module(tt.nn.Module, metaclass=AutoRegisterMeta):
     def modules(self):
         """返回所有子模块的迭代器"""
         return self._modules.values()
-
+    def __call__(self, *args):
+        return self.forward(*args)
     def forward(self, *args):
         """统一入口点，根据输入类型自动路由"""
         # 1. 单 Tensor 输入

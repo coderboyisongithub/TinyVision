@@ -50,7 +50,6 @@ py::array_t<float> numpy(const Tensor& tensor) {
 
         size_t num_elements = tensor.numel();
         std::copy(data_ptr, data_ptr + num_elements, copy_data);
-
         return array;
     }
     else{
@@ -271,6 +270,11 @@ py::module_ create_nn_submodule(py::module_ &m) {
            "Single input with multiple outputs")
       .def("multi_return_forward", py::overload_cast<std::vector<Tensor>&>(&nn::Module::multi_return_forward),
            "Vector input with multiple outputs")
+      .def("parameters", [](nn::Module& m) {
+        return m.parameters();
+      }, py::return_value_policy::reference_internal, "Get the parameters of the module")
+      .def("zeroGrad", &nn::Module::zeroGrad)
+      .def("name", &nn::Module::name)
       .def("to", py::overload_cast<Device>(&nn::Module::to))
       .def("to", py::overload_cast<Dtype>(&nn::Module::to))
       .def("to", [](nn::Module& self, const std::string& target) {
@@ -298,12 +302,10 @@ py::module_ create_nn_submodule(py::module_ &m) {
             model.to("cuda")      # Move to CUDA device
             model.to("float16")   # Convert to float16
         )pbdoc")
-
       .def("registerModules", &nn::Module::registerModules)
       .def("eval", &nn::Module::eval)
-      .def("train", &nn::Module::train);
+      .def("train", &nn::Module::train, py::arg("mode") = true, "Set training mode");
 
-  // 绑定具体模块
   py::class_<nn::Conv2D, nn::Module>(nn, "Conv2D")
       .def(py::init<int, int, Size2D, Size2D, Size2D, bool>(),
            py::arg("in_channels"), py::arg("out_channels"),
@@ -336,9 +338,84 @@ py::module_ create_nn_submodule(py::module_ &m) {
   return nn;
 }
 
+py::module_ create_optim_submodule(py::module_ &m) {
+  auto optim = m.def_submodule("optim", "Optimization Module");
+  py::class_<optim::Optimizer>(optim, "Optimizer")
+      .def("step", &optim::Optimizer::step, "Perform a single optimization step")
+      .def("zero_grad", &optim::Optimizer::zeroGrad, "Clear gradients")
+      .def("get_lr", &optim::Optimizer::getLr, "Get learning rate")
+      .def("set_lr", &optim::Optimizer::setLr, py::arg("lr"), "Set learning rate");
+
+  py::class_<optim::SGD, optim::Optimizer>(optim, "SGD")
+      .def(py::init<std::vector<Tensor*>&&, float, float, float, float, bool>(),
+           py::arg("parameters"),
+           py::arg("lr") = 0.001f,
+           py::arg("momentum") = 0.0f,
+           py::arg("dampening") = 0.0f,
+           py::arg("weight_decay") = 0.0f,
+           py::arg("nesterov") = false);
+
+  py::class_<optim::Adam, optim::Optimizer>(optim, "Adam")
+      .def(py::init<std::vector<Tensor*>&&, float, const std::pair<float, float>&, float, float, bool>(),
+           py::arg("parameters"),
+           py::arg("lr") = 0.001f,
+           py::arg("betas") = std::make_pair(0.9f, 0.999f),
+           py::arg("eps") = 1e-8f,
+           py::arg("weight_decay") = 0.0f,
+           py::arg("amsgrad") = false);
+
+  py::class_<optim::AdamW, optim::Optimizer>(optim, "AdamW")
+      .def(py::init<std::vector<Tensor*>&&, float, const std::pair<float, float>&, float, float, bool>(),
+           py::arg("parameters"),
+           py::arg("lr") = 0.001f,
+           py::arg("betas") = std::make_pair(0.9f, 0.999f),
+           py::arg("eps") = 1e-8f,
+           py::arg("weight_decay") = 0.01f,
+           py::arg("amsgrad") = false);
+
+  return optim;
+}
+
+
+void create_lr_scheduler_submodule(py::module_ &optim){
+    auto lr_scheduler = optim.def_submodule("lr_scheduler", "LR scheduler for optimization");
+    py::class_<optim::lr_scheduler::StepLR>(lr_scheduler, "StepLR")
+      .def(py::init<optim::Optimizer &, int32_t, float, int32_t>(),
+           py::arg("Optimizer"), py::arg("stepSize"), py::arg("gamma") = 0.1, py::arg("lastEpoch") = -1)
+      .def("getLr", &optim::lr_scheduler::StepLR::getLr);
+
+}
 void create_functional_submodule(py::module_ &nn) {
   auto functional = nn.def_submodule("functional", "Neural Network Functional Operations");
   functional.def("relu", &Function::relu);
+  functional.def("mseloss", [](const Tensor& input,
+                               const Tensor& target,
+                               const std::string& reduction) {
+                         if (reduction == "mean")
+                           return Function::mseloss(input, target, LossReduction::MEAN);
+                         else if (reduction == "none")
+                           return Function::mseloss(input, target, LossReduction::NONE);
+                         else if(reduction == "sum")
+                           return Function::mseloss(input, target, LossReduction::SUM);
+
+                          },py::arg("input"),
+                            py::arg("target"),
+                            py::arg("reduction") = 1
+                          );
+
+  functional.def("nllloss", [](const Tensor& input,
+                               const Tensor& target,
+                               const std::string& reduction = "mean") {
+                         if (reduction == "mean")
+                           return Function::nllloss(input, target, LossReduction::MEAN);
+                         else if (reduction == "none")
+                           return Function::nllloss(input, target, LossReduction::NONE);
+                         else if(reduction == "sum")
+                           return Function::nllloss(input, target, LossReduction::SUM);
+                          },py::arg("input"),
+                            py::arg("target"),
+                            py::arg("reduction") = "mean"
+                          );
   functional.def("log_softmax", &Function::logSoftmax, py::arg("input"), py::arg("dim"));
   functional.def("change_type", &Function::changetype, py::arg("input"), py::arg("dtype"));
   functional.def("max_pool2d",
@@ -346,12 +423,10 @@ void create_functional_submodule(py::module_ &nn) {
                     Size2D kernelSize,
                     py::object strideObj,
                     Size2D padding) {
-
                    std::optional<Size2D> stride;
                    if (!strideObj.is_none()) {
                      stride = strideObj.cast<Size2D>();
                    }
-
                    return Function::maxPool2d(input, kernelSize, stride, padding);
                  },
                  py::arg("input"),
@@ -363,9 +438,184 @@ void create_functional_submodule(py::module_ &nn) {
                  py::arg("input"), py::arg("start_dim") = 0, py::arg("end_dim") = -1);
 }
 
+py::module_ create_data_submodule(py::module_ &m) {
+  auto data = m.def_submodule("data", "Data Module");
+  py::class_<data::DataLoader, std::shared_ptr<data::DataLoader>>(data, "DataLoader")
+      .def(py::init<const std::shared_ptr<data::Dataset>&, size_t, bool, bool>(),
+              py::arg("dataset"), py::arg("batchSize"), py::arg("shuffle") = true
+      , py::arg("dropLast") = false)
+      .def("__iter__", [](const data::DataLoader& loader) {
+        return py::make_iterator(loader.begin(), loader.end());
+      }, py::keep_alive<0, 1>())
+      .def("__len__", &data::DataLoader::size, "Number of batches")
+      .def("batch_size", &data::DataLoader::batchSize, "Get batch size")
+      .def("dataset", &data::DataLoader::dataset, "Get underlying dataset");
+  return data;
+}
+
+void create_dataset_submodule(py::module_ &m) {
+    py::class_<data::Dataset, std::shared_ptr<data::Dataset>>(m, "DatasetBase")
+      .def("size", &data::Dataset::size,
+           "Get the size of the dataset")
+      .def("__len__", &data::Dataset::size,
+           "Get the size of the dataset")
+      .def("get_item", &data::Dataset::getItem, py::arg("index"),
+           "Get an item by index")
+      .def("__getitem__", &data::Dataset::getItem, py::arg("index"),
+           "Get an item by index");
+
+    py::class_<data::PyDataset, data::Dataset, std::shared_ptr<data::PyDataset>>(m, "Dataset")
+        .def(py::init<>())
+        .def("size", &data::Dataset::size,
+             "Get the size of the dataset")
+        .def("__len__", &data::Dataset::size,
+             "Get the size of the dataset")
+        .def("get_item", &data::Dataset::getItem, py::arg("index"),
+             "Get an item by index")
+        .def("__getitem__", &data::Dataset::getItem, py::arg("index"),
+             "Get an item by index");
+
+   // MNIST for example
+    py::enum_<data::DatasetMNIST::MnistDataType>(m, "MnistDataType")
+        .value("TRAIN", data::DatasetMNIST::MnistDataType::TRAIN)
+        .value("TEST", data::DatasetMNIST::MnistDataType::TEST)
+        .export_values();
+
+    py::class_<data::DatasetMNIST, data::Dataset, std::shared_ptr<data::DatasetMNIST>>(m, "DatasetMNIST")
+        .def(py::init([](const std::string& dir,
+                         const std::string& type_str,
+                         const std::shared_ptr<data::transforms::Transform>& transform) {
+               data::DatasetMNIST::MnistDataType type;
+               std::string upper_type = type_str;
+               std::transform(upper_type.begin(), upper_type.end(), upper_type.begin(), ::toupper);
+               if (upper_type == "TRAIN") {
+                 type = data::DatasetMNIST::MnistDataType::TRAIN;
+               } else if (upper_type == "TEST") {
+                 type = data::DatasetMNIST::MnistDataType::TEST;
+               } else {
+                 throw std::invalid_argument(
+                     "Invalid type argument: '" + type_str +
+                     "'. Must be 'train' or 'test' (case insensitive)."
+                 );
+               }
+               return new data::DatasetMNIST(dir, type, transform);
+             }),
+             py::arg("dir"), py::arg("type"), py::arg("transform"),
+             R"doc(
+    MNIST Dataset Constructor
+    Args:
+        dir (str): Directory containing MNIST data files
+        type (str): Dataset type - 'train' or 'test'
+        transform (Transform): Transform to apply to images
+    )doc")
+        .def("size", &data::Dataset::size,
+             "Get the size of the dataset")
+        .def("__len__", &data::Dataset::size,
+             "Get the size of the dataset")
+        .def("get_item", &data::Dataset::getItem, py::arg("index"),
+             "Get an item by index")
+        .def("__getitem__", &data::Dataset::getItem, py::arg("index"),
+             "Get an item by index");
+
+}
+
+void create_transforms_submodule(py::module_ &data){
+    auto transforms = data.def_submodule("transforms", "Transforms for data");
+
+    py::class_<data::transforms::Transform, std::shared_ptr<data::transforms::Transform>>(transforms, "Transform")
+        .def(py::init<>())
+        .def("process",
+         (Tensor (data::transforms::Transform::*)(Tensor&) const)
+             &data::transforms::Transform::process,
+         py::arg("input"))
+        .def("__call__",
+         (Tensor (data::transforms::Transform::*)(Tensor&) const)
+             &data::transforms::Transform::process,
+         py::arg("input"));
+
+    py::class_<data::transforms::Compose,
+           data::transforms::Transform,
+           std::shared_ptr<data::transforms::Compose>>(transforms, "Compose")
+        .def(py::init<>())
+        .def(py::init([](py::args args) {
+            std::vector<std::shared_ptr<data::transforms::Transform>> transforms;
+                for (py::handle handle : args) {
+                    try {
+                        transforms.emplace_back(
+                            handle.cast<std::shared_ptr<data::transforms::Transform>>()
+                        );
+                    }
+                    catch (const py::cast_error&) {
+                        try {
+                            data::transforms::Transform& transform =
+                                handle.cast<data::transforms::Transform&>();
+                            transforms.emplace_back(
+                                std::make_shared<data::transforms::Transform>(transform)
+                            );
+                        }
+                        catch (const py::cast_error& e) {
+                            throw std::runtime_error(
+                                "All arguments must be Transform instances or shared pointers to Transform. "
+                                "Error: " + std::string(e.what())
+                            );
+                        }
+                    }
+                }
+                auto compose = std::make_shared<data::transforms::Compose>();
+                for (auto& transform : transforms) {
+                    compose->pushBack(transform);
+                }
+                return compose;
+            }),
+            R"doc(
+            Create a Compose from any number of transform arguments
+
+            Args:
+                *args: Transform instances or shared pointers to Transform
+
+            Example:
+                transform1 = Resize(224, 224)
+                transform2 = ToTensor()
+                transform3 = Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+
+                compose = Compose(transform1, transform2, transform3)
+            )doc")
+        .def("push_back",
+             [](data::transforms::Compose& self,
+                const std::shared_ptr<data::transforms::Transform>& transform) {
+                 self.pushBack(transform);
+             }, py::arg("transform"),
+             "Add a transform using shared pointer")
+        .def("push_back",
+             [](data::transforms::Compose& self,
+                const data::transforms::Transform& transform) {
+                 auto copy = std::make_shared<std::decay_t<decltype(transform)>>(transform);
+                 self.pushBack(copy);
+             }, py::arg("transform"),
+             "Add a transform by value (creates a copy)")
+        .def("__call__",
+             (Tensor (data::transforms::Compose::*)(Tensor&) const)
+                 &data::transforms::Compose::process,
+             py::arg("input"),
+             "Apply the transformation pipeline");
+
+    py::class_<data::transforms::Normalize,
+               data::transforms::Transform,  // 继承自 Transform
+               std::shared_ptr<data::transforms::Normalize>>(transforms, "Normalize")
+        .def(py::init<float, float>(),
+             py::arg("mean"), py::arg("std"),
+             "Normalize transform with given mean and standard deviation\n\n"
+             "Args:\n"
+             "    mean (float): Mean value\n"
+             "    std (float): Standard deviation")
+        .def("process", &data::transforms::Normalize::process,
+             py::arg("input"),
+             "Apply normalization to input tensor");
+
+}
+
 PYBIND11_MODULE(pytt, m) {
     m.doc() = "A deep learning framework for faster vision task";
-
     py::enum_<Device>(m, "Device")
         .value("CPU", Device::CPU)
         .value("CUDA", Device::CUDA)
@@ -381,4 +631,9 @@ PYBIND11_MODULE(pytt, m) {
     bindSize2D(m);
     auto nn = create_nn_submodule(m);
     create_functional_submodule(nn);
+    auto optim = create_optim_submodule(m);
+    create_lr_scheduler_submodule(optim);
+    auto data = create_data_submodule(m);
+    create_transforms_submodule(data);
+    create_dataset_submodule(data);
 }

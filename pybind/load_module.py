@@ -1,7 +1,48 @@
 from py_loader import pytt as tt
 nn = tt.nn
 F =  tt.nn.functional
+data = tt.data
+optim = tt.optim
 from _module import Module
+import time
+def train(model, device, dataloader, optimizer, epoch):
+    model.train()
+    start = time.time()
+    for batch_idx, batch_data in dataloader:
+        data = batch_data[0].to(device)
+        target = batch_data[1].to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = F.nllloss(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % 3 == 0:
+            currDataCnt = batch_idx * dataloader.batch_size()
+            totalDataCnt = dataloader.dataset().size()
+            end = time.time()
+            print("Train Epoch: %d [%d/%d (%.2f%%)] Loss: %.2f, Elapsed: %.2fs" % (
+                epoch, currDataCnt, totalDataCnt, 100.0 * currDataCnt / totalDataCnt, loss.item(), end - start))
+
+def test(model, device, dataloader):
+    model.train()
+    start = time.time()
+    correct = 0
+    testLoss  = 0
+    for batch_idx, batch_data in dataloader:
+        data = batch_data[0].to(device)
+        target = batch_data[1].to(device)
+        output = model(data)
+        loss = F.nllloss(output, target)
+        testLoss += loss.to('cpu').numpy().item()
+        pred = output.to('cpu').numpy().argmax(1)
+        correct += (pred == target.to('cpu').numpy()).sum()
+    total = dataloader.dataset().size();
+    testLoss /= total;
+    end = time.time()
+    print(f"Test set: Average loss: {testLoss:.4f}, "
+          f"Accuracy: {correct}/{total} ({100. * correct / total:.0f}%), "
+          f"Elapsed: {end - start:.2f}s")
+
 
 class mnistnet(Module):
     def __init__(self):
@@ -27,20 +68,20 @@ class mnistnet(Module):
         x = F.log_softmax(x, 1)
         return x
 
-
 # 创建模型实例
 model = mnistnet()
 model.to("cuda")
-# 打印模型结构
-print("Model structure:")
-print(model)
 
-# 创建随机输入数据 (batch_size=4, channels=1, height=28, width=28)
-input_data = tt.Tensor.randn((4, 1, 28, 28))
-input_data.to("cuda")
-# 前向传播
-output = model.forward(input_data)
+transform = data.transforms.Compose(data.transforms.Normalize(0.1307, 0.3081))
+train_dataset = data.DatasetMNIST(r"E:\data\minst\MNIST\raw/","train",transform)
+test_dataset = data.DatasetMNIST(r"E:\data\minst\MNIST\raw/","test",transform)
 
-# 打印输出
-print("\nModel output shape:", output.shape)
-print("Output values:", output.to("cpu").numpy())
+train_loader = data.DataLoader(train_dataset, 32)
+test_loader = data.DataLoader(test_dataset, 32)
+
+optimizer = optim.Adam(model.parameters(), 0.001)
+scheduler = optim.lr_scheduler.StepLR(optimizer, 1, 0.9)
+
+for i in range(1):
+    train(model, "cuda", train_loader, optimizer, i)
+    test(model, "cuda", test_loader)

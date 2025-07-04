@@ -17,6 +17,7 @@ def load_pytt():
         # 旧版 Python 添加到 PATH
         os.environ['PATH'] = cuda_bin + os.pathsep + os.environ['PATH']
     os.add_dll_directory(r"D:\tools\opencv\build\bin")
+    os.add_dll_directory(r"D:\tools\opencv\build\x64\vc16\bin")
     os.add_dll_directory(r"E:\C_project\TinyTorch-official\TinyTorch-main\thirdparty\OpenBLAS\win64-64\bin")  # OpenBLAS
     os.add_dll_directory(r"E:\C_project\TinyTorch-official\TinyTorch-main\cmake-build-debug-visual-studio\pybind\src")  # 模块所在目录
     # 3. 预加载关键 DLL

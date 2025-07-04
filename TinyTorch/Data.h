@@ -44,11 +44,14 @@ class Compose : public Transform {
     }
   }
 
-  template <typename TransformType>
-  void pushBack(TransformType&& transform) {
-    transforms_.push_back(std::make_shared<TransformType>(
-        std::forward<TransformType>(transform)));
-  }
+    template <typename TransformType,
+            typename = std::enable_if_t<!std::is_same_v<std::decay_t<TransformType>,
+            std::shared_ptr<Transform>>>>
+    void pushBack(TransformType&& transform) {
+        transforms_.push_back(std::make_shared<std::decay_t<TransformType>>(
+            std::forward<TransformType>(transform)
+        ));
+    }
 
   void pushBack(const std::shared_ptr<Transform>& transform) {
     transforms_.emplace_back(transform);
@@ -83,7 +86,6 @@ class Compose : public Transform {
   }
 
   void pushBack() {}
-
   std::vector<std::shared_ptr<Transform>> transforms_;
 };
 
