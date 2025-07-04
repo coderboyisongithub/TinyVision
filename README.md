@@ -32,9 +32,8 @@ Tiny deep learning training framework implemented from scratch in C++ that follo
   - LogSoftmax
   - Relu
   - Sequential
-  - UpSample
-  - Concat
-  - Split
+  - MultiSelfAttention
+  - LayerNorm
 - Loss
   - MSELoss
   - NLLLoss
@@ -51,6 +50,10 @@ Tiny deep learning training framework implemented from scratch in C++ that follo
   - Dataset
   - DataLoader
   - Transform
+- Function
+  - UpSample
+  - Concat
+  - Split
 
 ## Automatic differentiation
 
