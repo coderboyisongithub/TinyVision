@@ -115,19 +115,62 @@ void Sequential::setTraining(bool mode) {
   }
 }
 
-FlashSelfAttention::FlashSelfAttention(int32_t inFeatures, int32_t head, AttentionMethod method)
-    : inFeatures_(inFeatures),  head_(head), method_(method) {
+MultiheadAttention::MultiheadAttention(int32_t inFeatures, int32_t head, int is_casual, bool bias, bool bias_proj)
+    : head_(head), is_casual_(is_casual) , useBias_(bias), useprojBias_(bias_proj),
+    qkv_proj_(inFeatures, inFeatures*3, bias), last_proj_(inFeatures, inFeatures, bias_proj) {
+    registerModules({qkv_proj_, last_proj_});
+    MultiheadAttention::resetParameters();
+
 }
 
-Tensor FlashSelfAttention::forward(std::vector<Tensor> &qkv) {
-  auto Q = qkv[0];
-  auto K = qkv[1];
-  auto V = qkv[2];
-  if (method_ == AttentionMethod::FalshAttentionV2) {
-    return Function::flashattention(Q,K,V,head_);
+Tensor MultiheadAttention::forward(Tensor &input) {
+  int B = input.shape()[0];
+  int L = input.shape()[1];
+  int C = input.shape()[2];
+  input = Function::reshape(input, {B * L, C});
+  input = qkv_proj_(input);
+  input = Function::reshape(input, {B , L, 3 * C});
+  input = Function::selfattention_qkv(input, head_, is_casual_);
+  input = Function::reshape(input, {B * L, C});
+  input = last_proj_(input);
+  input = Function::reshape(input, {B, L, C});
+  return input;
+}
+
+std::vector<Tensor *> MultiheadAttention::parameters() {
+  if (useBias_ && useprojBias_) {
+    return {&qkv_proj_.weights(), &qkv_proj_.bias(), &last_proj_.weights(), &last_proj_.bias()};
   }
-  else if (method_ == AttentionMethod::Attention){
-    return Function::flashattention(Q,K,V,head_);
+  else if (useBias_ ) {
+    return {&qkv_proj_.weights(), &qkv_proj_.bias(), &last_proj_.weights()};
+  }
+  else if (useprojBias_ ) {
+    return {&qkv_proj_.weights(), &last_proj_.weights(), &last_proj_.bias()};
+  }
+  return {&qkv_proj_.weights(), &last_proj_.weights()};
+}
+
+std::vector<Tensor *> MultiheadAttention::states() { return parameters(); }
+
+void MultiheadAttention::resetParameters() {
+  Init::xavierUniform(qkv_proj_.weights(), 1.0f, FAN_AVG);
+  Init::xavierUniform(last_proj_.weights(), 1.0f, FAN_AVG);
+  if (useBias_) {
+    Init::uniform(qkv_proj_.bias(), 0.0f, 0.0f);
+  }
+  if (useprojBias_) {
+    Init::uniform(last_proj_.bias(), 0.0f, 0.0f);
+  }
+}
+
+void MultiheadAttention::zeroGrad() {
+  qkv_proj_.weights().zeroGrad();
+  last_proj_.weights().zeroGrad();
+  if (useBias_) {
+    qkv_proj_.bias().zeroGrad();
+  }
+  if (useprojBias_) {
+    last_proj_.bias().zeroGrad();
   }
 }
 
@@ -244,16 +287,13 @@ void Conv1D::zeroGrad() {
 }
 
 Conv2D::Conv2D(int32_t inFeatures, int32_t outFeatures, Size2D kernelSize,
-               Size2D stride, Size2D padding, bool bias, Dtype fw_type ,
-         Dtype bw_type )
+               Size2D stride, Size2D padding, bool bias)
     : inFeatures_(inFeatures),
       outFeatures_(outFeatures),
       kernelSize_(kernelSize),
       stride_(stride),
       padding_(padding),
-      useBias_(bias),
-      fw_type_(fw_type),
-      bw_type_(bw_type){
+      useBias_(bias){
   weights_ = Tensor::shape(
       {outFeatures, inFeatures, kernelSize_.h, kernelSize_.w}, true);
   if (bias) {

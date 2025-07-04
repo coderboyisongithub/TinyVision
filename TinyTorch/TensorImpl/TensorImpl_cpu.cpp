@@ -475,8 +475,8 @@ void TensorOpsCPU::fillRandBernoulli_(TensorImpl& t, float p) {
   }
 }
 
-TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl& qkvr,
-                                 TensorImpl& att, TensorImpl& preatt, int32_t NH) {
+TensorImpl TensorOpsCPU::attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl& qkvr,
+                                 TensorImpl& att, TensorImpl& preatt, int32_t NH,int is_casual) {
     // input is (B, T, 3C) Q,K,V
     // preatt, att are (B, NH, T, T)
     // output is (B, T, C)
@@ -486,7 +486,7 @@ TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl
     int C3 = C*3;
     int hs = C / NH; // head size
     float scale = 1.0 / sqrtf(hs);
-    auto ret = TensorImpl::zerosLike(inp);
+    auto ret = TensorImpl::zeros({B,T,C});
     for (int b = 0; b < B; b++) {
         for (int t = 0; t < T; t++) {
             for (int h = 0; h < NH; h++) {
@@ -495,7 +495,8 @@ TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl
                 float* att_bth = att.data() + b*NH*T*T + h*T*T + t*T;
                 // pass 1: calculate query dot key and maxval
                 float maxval = -10000.0f; // TODO something better
-                for (int t2 = 0; t2 <= t; t2++) {
+                int end_t2 = is_casual ? t : T-1;
+                for (int t2 = 0; t2 <= end_t2; t2++) {
                     const float* key_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
                     // (query_t) dot (key_t2)
                     float val = 0.0f;
@@ -509,13 +510,16 @@ TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl
                     preatt_bth[t2] = val;
                 }
                 // pad with -INFINITY outside of autoregressive region for debugging comparisons
-                for (int t2 = t+1; t2 < T; t2++) {
-                    preatt_bth[t2] = -INFINITY;
+                 if (is_casual) {
+                    for (int t2 = t+1; t2 < T; t2++) {
+                        preatt_bth[t2] = -INFINITY;
+                    }
+                } else {
                 }
 
                 // pass 2: calculate the exp and keep track of sum
                 float expsum = 0.0f;
-                for (int t2 = 0; t2 <= t; t2++) {
+                for (int t2 = 0; t2 <= end_t2; t2++) {
                     float expv = expf(preatt_bth[t2] - maxval);
                     expsum += expv;
                     att_bth[t2] = expv;
@@ -523,20 +527,26 @@ TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl
                 float expsum_inv = expsum == 0.0f ? 0.0f : 1.0f / expsum;
 
                 // pass 3: normalize to get the softmax
-                for (int t2 = 0; t2 < T; t2++) {
-                    if (t2 <= t) {
+                if(is_casual){
+                    for (int t2 = 0; t2 < T; t2++) {
+                        if (t2 <= t) {
+                            att_bth[t2] *= expsum_inv;
+                        } else {
+                            // causal attention mask. not strictly necessary to set to zero here
+                            // only doing this explicitly for debugging and checking to PyTorch
+                            att_bth[t2] = 0.0f;
+                        }
+                    }
+                }else{
+                    for (int t2 = 0; t2 < T; t2++) {
                         att_bth[t2] *= expsum_inv;
-                    } else {
-                        // causal attention mask. not strictly necessary to set to zero here
-                        // only doing this explicitly for debugging and checking to PyTorch
-                        att_bth[t2] = 0.0f;
                     }
                 }
 
                 // pass 4: accumulate weighted values into the output of attention
                 float* out_bth = ret.data() + b * T * C + t * C + h * hs;
                 for (int i = 0; i < hs; i++) { out_bth[i] = 0.0f; }
-                for (int t2 = 0; t2 <= t; t2++) {
+                for (int t2 = 0; t2 <= end_t2; t2++) {
                     const float* value_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C*2; // +C*2 because it's value
                     float att_btht2 = att_bth[t2];
                     for (int i = 0; i < hs; i++) {
@@ -549,8 +559,8 @@ TensorImpl attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl
     return ret;
 }
 
-std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,TensorImpl& inp,
-                                               TensorImpl& qkvr, TensorImpl& vaccum, TensorImpl& att, int32_t NH) {
+std::vector<TensorImpl> TensorOpsCPU::attention_backward_qkv(const TensorImpl& dout,TensorImpl& inp,
+                       TensorImpl& qkvr, TensorImpl& vaccum, TensorImpl& att, int32_t NH,int is_casual) {
     // inp/dinp are (B, T, 3C) Q,K,V
     // att/datt/dpreatt are (B, NH, T, T)
     // dout is (B, T, C)
@@ -585,11 +595,11 @@ std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,TensorImpl
                         dvalue_t2[i] += att_bth[t2] * dout_bth[i];
                     }
                 }
-
+                int end_idx = is_casual ? t : T-1;
                 // backward pass 2 & 3, the softmax
                 // note that softmax (like e.g. tanh) doesn't need the input (preatt) to backward
-                for (int t2 = 0; t2 <= t; t2++) {
-                    for (int t3 = 0; t3 <= t; t3++) {
+                for (int t2 = 0; t2 <= end_idx; t2++) {
+                    for (int t3 = 0; t3 <= end_idx; t3++) {
                         float indicator = t2 == t3 ? 1.0f : 0.0f;
                         float local_derivative = att_bth[t2] * (indicator - att_bth[t3]);
                         dpreatt_bth[t3] += scale * local_derivative * datt_bth[t2];
@@ -597,7 +607,7 @@ std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,TensorImpl
                 }
 
                 // backward pass 1, the query @ key matmul
-                for (int t2 = 0; t2 <= t; t2++) {
+                for (int t2 = 0; t2 <= end_idx; t2++) {
                     float* key_t2 = inp.data() + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
                     float* dkey_t2 = dinp.data() + b * T * C3 + t2 * C3 + h * hs + C; // +C because it's key
                     for (int i = 0; i < hs; i++) {
@@ -611,7 +621,8 @@ std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,TensorImpl
             }
         }
     }
-    return {dinp, datt, dpreatt};
+    auto p = dinp.toList();
+    return {dinp};
 }
 
 TensorImpl TensorOpsCPU::layernorm_forward(TensorImpl& a, TensorImpl& mean, TensorImpl& rstd,

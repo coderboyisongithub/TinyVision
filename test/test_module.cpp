@@ -88,4 +88,79 @@ TEST(TEST_Module, batchNorm2d) {
                         {5.15714, 5.15714, 5.15714});
 }
 
+TEST(TEST_Module, multiselfattention_is_casual) {
+    manualSeed(2024);
+    const int batch_size = 2;
+    const int seq_len = 4;
+    const int embed_dim = 4;
+    const int num_heads = 2;
+    auto attn_cpu = nn::MultiheadAttention(embed_dim, num_heads, 1);
+    auto attn_cuda = nn::MultiheadAttention(embed_dim, num_heads, 1);
+    attn_cuda.to(Device::CUDA);
+    auto input_cpu = Tensor::randn({batch_size, seq_len, embed_dim},true);
+    auto input_cuda = Tensor(input_cpu.data()+0,true).to(Device::CUDA);
+    auto out_cpu = attn_cpu(input_cpu);
+    auto out_cuda = attn_cuda(input_cuda);
+    auto loss_cpu = out_cpu.sum();
+    auto loss_cuda = out_cuda.sum();
+    loss_cpu.backward();
+    loss_cuda.backward();
+    EXPECT_NEAR(loss_cpu.item(), loss_cuda.to(Device::CPU).item(), 1e-4);
+    auto w_grad_cpu = attn_cpu.qkv_proj().weights().getGrad().toList();
+    auto w_grad_cuda = attn_cuda.qkv_proj().weights().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(w_grad_cpu,
+                          w_grad_cuda);
+    auto b_grad_cpu = attn_cpu.qkv_proj().bias().getGrad().toList();
+    auto b_grad_cuda = attn_cuda.qkv_proj().bias().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(b_grad_cpu,
+                          b_grad_cuda);
 
+    auto out_w_grad_cpu = attn_cpu.last_proj().weights().getGrad().toList();
+    auto out_w_grad_cuda = attn_cuda.last_proj().weights().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(out_w_grad_cpu,
+                          out_w_grad_cuda);
+    auto out_b_grad_cpu = attn_cpu.last_proj().bias().getGrad().toList();
+    auto out_b_grad_cuda = attn_cuda.last_proj().bias().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(out_b_grad_cpu,
+                          out_b_grad_cuda);
+}
+
+TEST(TEST_Module, multiselfattention_non_casual) {
+    const int batch_size = 2;
+    const int seq_len = 4;
+    const int embed_dim = 4;
+    const int num_heads = 2;
+    auto attn_cpu = nn::MultiheadAttention(embed_dim, num_heads, 0 );
+    auto attn_cuda = nn::MultiheadAttention(embed_dim, num_heads, 0 );
+    attn_cuda.to(Device::CUDA);
+    auto input_cpu = Tensor::randn({batch_size, seq_len, embed_dim},true);
+    auto input_cuda = Tensor(input_cpu.data()+0,true).to(Device::CUDA);
+    auto out_cpu = attn_cpu(input_cpu);
+    auto out_cuda= attn_cuda(input_cuda);
+    auto loss_cpu = out_cpu.sum();
+    auto loss_cuda = out_cuda.sum();
+    loss_cpu.backward();
+    loss_cuda.backward();
+    EXPECT_NEAR(loss_cpu.item(), loss_cuda.to(Device::CPU).item(), 1e-4);
+    auto input_grad_cpu = input_cpu.getGrad().toList();
+    auto input_grad_cuda = input_cuda.getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(input_grad_cpu,
+                          input_grad_cuda);
+    auto w_grad_cpu = attn_cpu.qkv_proj().weights().getGrad().toList();
+    auto w_grad_cuda = attn_cuda.qkv_proj().weights().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(w_grad_cpu,
+                          w_grad_cuda);
+    auto b_grad_cpu = attn_cpu.qkv_proj().bias().getGrad().toList();
+    auto b_grad_cuda = attn_cuda.qkv_proj().bias().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(b_grad_cpu,
+                          b_grad_cuda);
+
+    auto out_w_grad_cpu = attn_cpu.last_proj().weights().getGrad().toList();
+    auto out_w_grad_cuda = attn_cuda.last_proj().weights().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(out_w_grad_cpu,
+                          out_w_grad_cuda);
+    auto out_b_grad_cpu = attn_cpu.last_proj().bias().getGrad().toList();
+    auto out_b_grad_cuda = attn_cuda.last_proj().bias().getGrad().toList();
+    EXPECT_FLOAT_VEC_NEAR(out_b_grad_cpu,
+                          out_b_grad_cuda);
+}

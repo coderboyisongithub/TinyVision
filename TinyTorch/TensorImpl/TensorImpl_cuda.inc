@@ -15,7 +15,8 @@
 #include "kernel/mask.inc"
 #include "kernel/bernoulli.inc"
 #include "kernel/layernorm.inc"
-#include "kernel/attention.inc"
+#include "kernel/attention_casual.inc"
+
 namespace TinyTorch {
 
 #define WARP_SIZE 32

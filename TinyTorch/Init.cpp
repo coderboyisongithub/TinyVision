@@ -10,6 +10,36 @@
 
 namespace TinyTorch::nn {
 
+void Init::xavierUniform(Tensor &tensor, float gain, FanMode mode) {
+    float bound = calculateXavierBound(tensor, gain, mode);
+    uniform(tensor, -bound, bound);
+}
+
+void Init::xavierNormal(Tensor &tensor, float gain, FanMode mode) {
+    float std = calculateXavierBound(tensor, gain, mode) / sqrtf(3.0f);
+}
+
+float Init::calculateXavierBound(const Tensor &tensor, float gain, FanMode mode) {
+    auto [fan_in, fan_out] = calculateFan(tensor);
+    if (fan_in <= 0 || fan_out <= 0) {
+        LOGE("Fan in and fan out should be positive");
+        return 1.0f;
+    }
+    float n = 0.0f;
+    switch (mode) {
+        case FAN_AVG:
+            n = (fan_in + fan_out) / 2.0f;
+            break;
+        case FAN_IN:
+            n = fan_in;
+            break;
+        case FAN_OUT:
+            n = fan_out;
+            break;
+    }
+    return gain * sqrtf(6.0f / n);
+}
+
 void Init::uniform(Tensor &tensor, float min, float max) {
   tensor.data().fillUniform_(min, max);
 }

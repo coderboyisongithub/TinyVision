@@ -147,8 +147,8 @@ Tensor Function::reshape(const Tensor& input, const Shape& shape) {
   return std::make_shared<FuncReshape>(shape)->callForward({&input});
 }
 
-Tensor Function::selfattention_qkv(const  Tensor& input, int32_t head) {
-  return std::make_shared<FuncSelfAttention>(head)->callForward({&input});
+Tensor Function::selfattention_qkv(const  Tensor& input, int32_t head,int is_casual) {
+  return std::make_shared<FuncSelfAttention>(head, is_casual)->callForward({&input});
 }
 
 Tensor Function::linear(const Tensor& input, const Tensor& weight,
@@ -780,16 +780,16 @@ TensorImpl FuncSelfAttention::forward(const std::vector<const Tensor*>& inputs) 
   int32_t B = inputs[0]->shape()[0];
   int32_t T = inputs[0]->shape()[1];
   int32_t C = inputs[0]->shape()[2];
-  TensorImpl preatt = TensorImpl::zeros({B,head_num_,T,T});
-  TensorImpl att = TensorImpl::zeros({B,head_num_,T,T});
-  TensorImpl qkvr = TensorImpl::zeros({B,T,3,C});
-  TensorImpl vaccum = TensorImpl::zeros({B,T,C});
-  auto ret = inputs[0]->data().ops()->attention_forward_qkv(inputs[0]->data(),qkvr,vaccum,att,preatt,head_num_);
-  auto preatt_t = Tensor(static_cast<TensorImpl>(preatt));
-  auto att_t = Tensor(static_cast<TensorImpl>(att));
-  auto qkvr_t = Tensor(static_cast<TensorImpl>(qkvr));
-  auto vaccum_t = Tensor(static_cast<TensorImpl>(vaccum));
-  saveForBackward({&preatt_t,&att_t,&qkvr_t,&vaccum_t});
+  TensorImpl preatt = TensorImpl::zeros({B,head_num_,T,T},input.device(),input.type());
+  TensorImpl att = TensorImpl::zeros({B,head_num_,T,T},input.device(),input.type());
+  TensorImpl qkvr = TensorImpl::zeros({B,T,3,C/3},input.device(),input.type());
+  TensorImpl vaccum = TensorImpl::zeros({B,T,C/3},input.device(),input.type());
+  auto ret = inputs[0]->data().ops()->attention_forward_qkv(inputs[0]->data(),vaccum,qkvr,att,preatt,head_num_, is_casual_);
+  auto qkvr_t = Tensor(static_cast<TensorImpl>(qkvr),true);
+  auto vaccum_t = Tensor(static_cast<TensorImpl>(vaccum),true);
+  auto att_t = Tensor(static_cast<TensorImpl>(att),true);
+  auto preatt_t = Tensor(static_cast<TensorImpl>(preatt),true);
+  saveForBackward({&qkvr_t,&vaccum_t,&att_t,&preatt_t});
   return ret;
 }
 
@@ -798,7 +798,7 @@ std::vector<TensorImpl> FuncSelfAttention::backward(const TensorImpl& grad) {
   auto grad_output = grad.ops()->attention_backward_qkv(grad,
                                                   savedTensors[0].data(),savedTensors[1].data(),
                                                   savedTensors[2].data(),savedTensors[3].data(),
-                                                  head_num_);
+                                                  head_num_, is_casual_);
   std::vector<TensorImpl> ret;
   if (savedTensors[0].isRequiresGrad()) {
       ret.push_back(grad_output[0]);

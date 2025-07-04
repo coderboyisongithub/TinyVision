@@ -229,8 +229,6 @@ typedef enum ShapeCompatible_ {
   _H TensorImpl dot(const TensorImpl& a, const TensorImpl& b) _T;              \
                                                                                \
   /* matmul */                                                                 \
-  _H TensorImpl flash_attention_(const TensorImpl& Q, const TensorImpl& K,     \
-               const TensorImpl& V , int32_t head) _T;                         \
   _H TensorImpl upsample_forward(const TensorImpl& Q, int32_t scale_factor) _T;\
   _H TensorImpl upsample_backward(const TensorImpl& Q, int32_t scale_factor) _T;\
   _H TensorImpl concat(const TensorImpl& a ,                                   \
@@ -254,10 +252,11 @@ typedef enum ShapeCompatible_ {
   TensorImpl& mean, TensorImpl& rstd)  _T;                                     \
   _H TensorImpl attention_forward_qkv(TensorImpl& inp                          \
   , TensorImpl& vaccum, TensorImpl& qkvr,                                      \
-  TensorImpl& att, TensorImpl& preatt, int32_t NH) _T;                         \
+  TensorImpl& att, TensorImpl& preatt, int32_t NH ,int is_casual) _T;          \
   _H std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,    \
   TensorImpl& inp, TensorImpl& qkvr, TensorImpl& vaccum,                       \
-  TensorImpl& att, int32_t NH) _T;
+  TensorImpl& att, int32_t NH, int is_casual ) _T;
+
 class TensorImpl;
 class TensorOperations {
  public:

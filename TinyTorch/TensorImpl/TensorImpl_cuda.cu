@@ -1990,7 +1990,7 @@ TensorImpl TensorOpsCUDA::upsample_backward(const TensorImpl& a , int32_t scale_
 }
 
 TensorImpl TensorOpsCUDA::attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl& qkvr,
-                                 TensorImpl& att, TensorImpl& preatt, int32_t NH) {
+                                 TensorImpl& att, TensorImpl& preatt, int32_t NH,int is_casual) {
     // inp is (B, T, 3C) QKV
     // preatt, att are (B, NH, T, T)
     // output is (B, T, C)
@@ -1998,7 +1998,7 @@ TensorImpl TensorOpsCUDA::attention_forward_qkv(TensorImpl& inp, TensorImpl& vac
     int T = inp.shape()[1];
     int C = inp.shape()[2] / 3;
     int HS = C / NH; // head size
-    auto ret = TensorImpl::zerosLike(inp,inp.device(),inp.type());
+    auto ret = TensorImpl::zeros({B,T,C},inp.device(),inp.type());
     // permute and separate inp from (B, T, 3, NH, HS) to 3X (B, NH, T, HS)
     float *q, *k, *v;
     q = qkvr.data() + 0 * B * T * C;
@@ -2025,7 +2025,8 @@ TensorImpl TensorOpsCUDA::attention_forward_qkv(TensorImpl& inp, TensorImpl& vac
     float scale = 1.0 / sqrtf(HS);
     int grid_size = ceil_div(B * NH * T * 32, block_size);
     ASSERT(T % 4  == 0);
-    launch_softmax_forward(att.data(), scale, preatt.data(), B * NH, T , 0 ,block_size);
+    launch_softmax_forward(att.data(), preatt.data(), B,T,HS,NH, block_size, is_casual);
+    CUDA_KERNEL_CHECK();
     // new approach: first cuBLAS another batched matmul
     // y = att @ v # (B, nh, T, T) @ (B, nh, T, hs) -> (B, nh, T, hs)
     CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
@@ -2047,15 +2048,16 @@ TensorImpl TensorOpsCUDA::attention_forward_qkv(TensorImpl& inp, TensorImpl& vac
 }
 
 std::vector<TensorImpl> TensorOpsCUDA::attention_backward_qkv(const TensorImpl& dout,TensorImpl& inp,
-                                               TensorImpl& qkvr, TensorImpl& vaccum, TensorImpl& att, int32_t NH) {
+                                               TensorImpl& qkvr, TensorImpl& vaccum, TensorImpl& att, int32_t NH,
+                                               int is_casual) {
     TensorImpl datt = TensorImpl::zerosLike(att,att.device(),att.type());
     TensorImpl dpreatt = TensorImpl::zerosLike(att,att.device(),att.type());
     TensorImpl dinp = TensorImpl::zerosLike(inp,inp.device(),inp.type());
     TensorImpl dqkvr = TensorImpl::zerosLike(inp,inp.device(),inp.type());
     TensorImpl dvaccum = TensorImpl::zerosLike(vaccum,vaccum.device(),vaccum.type());
-    int B = inp.shape()[0];
-    int T = inp.shape()[1];
-    int C = inp.shape()[2] / 3;
+    int B = dout.shape()[0];
+    int T = dout.shape()[1];
+    int C = dout.shape()[2];
     int HS = C / NH; // head size
     const float alpha = 1.0f;
     const float beta = 1.0f; // note beta = 1.0f so that we accumulate gradients (+=)
@@ -2068,7 +2070,7 @@ std::vector<TensorImpl> TensorOpsCUDA::attention_backward_qkv(const TensorImpl& 
     dq = dqkvr.data() + 0 * B * T * C;
     dk = dqkvr.data() + 1 * B * T * C;
     dv = dqkvr.data() + 2 * B * T * C;
-    int block_size =  getBlockSize();
+    int block_size = getBlockSize();
     // backward through the unpermute operation
     int num_blocks = ceil_div(B * T * C, block_size);
     unpermute_kernel_backward<<<num_blocks, block_size>>>(dvaccum.data(), dout.data(), B, T, NH, HS);
@@ -2096,9 +2098,7 @@ std::vector<TensorImpl> TensorOpsCUDA::attention_backward_qkv(const TensorImpl& 
             B * NH));
 
     // backward into preatt
-    int hs = C / NH; // head size
-    float scale = 1.0f / sqrtf(hs);
-    launch_softmax_backward(dpreatt.data(), datt.data(), att.data(),  B,  T,  C,  NH,  0 ,block_size);
+    launch_softmax_backward(dpreatt.data(), datt.data(), att.data(),  B,  T,  C,  NH,  block_size, is_casual);
     CUDA_KERNEL_CHECK();
     // backward into q
     CUBLAS_CHECK(cublasSgemmStridedBatched(getCublasHandle(),
@@ -2125,6 +2125,13 @@ std::vector<TensorImpl> TensorOpsCUDA::attention_backward_qkv(const TensorImpl& 
     num_blocks = ceil_div(B * NH * T * HS, block_size);
     permute_kernel_backward<<<num_blocks, block_size>>>(dinp.data(), dq, dk, dv, B, T, NH, HS);
     CUDA_KERNEL_CHECK();
+    auto p = dinp.to(Device::CPU).toList();
+    auto dpreatt_cpu = dpreatt.to(Device::CPU).toList();
+    auto datt_cpu = datt.to(Device::CPU).toList();
+    auto att_cpu = att.to(Device::CPU).toList();
+    auto dvaccum_cpu = dvaccum.to(Device::CPU).toList();
+    auto vaccum_cpu = vaccum.to(Device::CPU).toList();
+    auto qkvr_cpu = qkvr.to(Device::CPU).toList();
     return {dinp};
 }
 

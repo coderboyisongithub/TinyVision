@@ -31,7 +31,8 @@ class Tensor {
  public:
   Tensor() : data_(std::make_shared<TensorImpl>()) {}
 
-  #ifdef USE_PYBIND  // init from numpy
+  #ifdef USE_PYBIND
+  // init from numpy
   explicit Tensor(void* data, const Shape& shape, bool requiresGrad = false);
   #endif
 

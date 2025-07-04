@@ -93,7 +93,7 @@ class Function : public std::enable_shared_from_this<Function> {
   static Tensor reshape(const Tensor& input, const Shape& shape);
   static Tensor linear(const Tensor& input, const Tensor& weight,
                        const Tensor& bias);
-  static Tensor selfattention_qkv(const Tensor& input, int32_t head);
+  static Tensor selfattention_qkv(const Tensor& input, int32_t head,int is_casual = 0);
   static Tensor dropout(const Tensor& input, float p = 0.5f,bool training = true);
   static Tensor softmax(const Tensor& input, int32_t dim);
   static Tensor sigmoid(const Tensor& input);
@@ -458,11 +458,12 @@ class FuncLayerNorm : public Function {
 
 class FuncSelfAttention : public Function {
  public:
-  explicit FuncSelfAttention(int32_t head_num)
-      : head_num_(head_num) {}
+  explicit FuncSelfAttention(int32_t head_num, int is_casual)
+      : head_num_(head_num), is_casual_(is_casual) {}
   DEFINE_FUNCTION_MEMBERS(Function_SelfAttention)
  private:
   int32_t head_num_;
+  int is_casual_;
 };
 
 class FuncBatchNorm : public Function {
