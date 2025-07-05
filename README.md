@@ -101,7 +101,7 @@ class Net : public nn::Module {
 
 ```
 
-## MNIST training demo:
+## MNIST training demo with C++:
 ```c++
 #include "Torch.h"
 
@@ -267,7 +267,7 @@ In config/minst.json
 }
 ```
 
-## MNIST training demo:
+## MNIST training demo with Python:
 ``` python
 from py_loader import pytt as tt
 nn = tt.nn
