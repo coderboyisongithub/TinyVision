@@ -5,7 +5,6 @@
 namespace TinyTorch::nn {
 class MultiheadAttention : public Module {
  public:
-    std::string name() const override { return "MultiheadAttention"; }
   explicit MultiheadAttention(int32_t inFeatures, int32_t head = 8,
             int is_casual = 0, bool bias = true, bool bias_proj = true);
   Tensor forward(Tensor &input) override;
@@ -23,5 +22,6 @@ class MultiheadAttention : public Module {
   int32_t head_;
   bool useBias_;
   bool useprojBias_;
+  std::string name_ = "MultiheadAttention";
 };
 }

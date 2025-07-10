@@ -26,7 +26,46 @@ std::string type_to_string(Dtype type) {
         default: return "unknown";
     }
 }
-
+inline Device device_from_string(const std::string& str) {
+    if (str == "cpu" || str == "CPU") return Device::CPU;
+    if (str == "cuda" || str == "CUDA") return Device::CUDA;
+    throw std::runtime_error("Unknown device: " + str);
+}
+inline Dtype dtype_from_string(const std::string& str) {
+    if (str == "float32") return Dtype::float32;
+    if (str == "float16") return Dtype::float16;
+    if (str == "bfloat16") return Dtype::bfloat16;
+    throw std::runtime_error("Unknown dtype: " + str);
+}
+namespace pybind11::detail {
+    template<> struct type_caster<Dtype> {
+        PYBIND11_TYPE_CASTER(Dtype, _("Dtype"));
+        bool load(py::handle src, bool) {
+            if (!src || !PyUnicode_Check(src.ptr())) return false;
+            try {
+                value = dtype_from_string(py::str(src));
+                return true;
+            } catch (...) { return false; }
+        }
+        static handle cast(Dtype src, return_value_policy, handle) {
+            return py::str(src == Dtype::float32 ? "float32" :
+            src == Dtype::float16 ? "float16" : "bfloat16").release();
+        }
+        };
+    template<> struct type_caster<Device> {
+        PYBIND11_TYPE_CASTER(Device, _("Device"));
+        bool load(py::handle src, bool) {
+            if (!src || !PyUnicode_Check(src.ptr())) return false;
+            try {
+                value = device_from_string(py::str(src));
+                return true;
+            } catch (...) { return false; }
+        }
+        static handle cast(Device src, return_value_policy, handle) {
+            return py::str(src == Device::CPU ? "cpu" : "cuda").release();
+        }
+    };
+}
 py::array_t<float> numpy(const Tensor& tensor) {
     bool can_direct =
         tensor.device() == Device::CPU &&
@@ -261,7 +300,7 @@ void bindSize2D(py::module &m) {
 py::module_ create_nn_submodule(py::module_ &m) {
   auto nn = m.def_submodule("nn", "Neural Network Module");
   // 绑定基类 Module
-  py::class_<nn::Module, nn::PyModule>(nn, "Module")
+  py::class_<nn::Module, nn::PyModule, std::shared_ptr<nn::Module>>(nn, "Module")
       .def(py::init<>())
       .def("__call__", py::overload_cast<Tensor&>(&nn::Module::forward), "Single input forward")
       .def("forward", py::overload_cast<Tensor&>(&nn::Module::forward), "Single input forward")
@@ -270,6 +309,7 @@ py::module_ create_nn_submodule(py::module_ &m) {
            "Single input with multiple outputs")
       .def("multi_return_forward", py::overload_cast<std::vector<Tensor>&>(&nn::Module::multi_return_forward),
            "Vector input with multiple outputs")
+
       .def("parameters", [](nn::Module& m) {
         return m.parameters();
       }, py::return_value_policy::reference_internal, "Get the parameters of the module")
@@ -277,36 +317,16 @@ py::module_ create_nn_submodule(py::module_ &m) {
       .def("name", &nn::Module::name)
       .def("to", py::overload_cast<Device>(&nn::Module::to))
       .def("to", py::overload_cast<Dtype>(&nn::Module::to))
-      .def("to", [](nn::Module& self, const std::string& target) {
-        if (target == "cpu" || target == "CPU") {
-          return self.to(Device::CPU);
-        } else if (target == "cuda" || target == "CUDA") {
-          return self.to(Device::CUDA);
-        }
-        if (target == "float32") {
-          return self.to(Dtype::float32);
-        } else if (target == "float16") {
-          return self.to(Dtype::float16);
-        } else if (target == "bfloat16") {
-          return self.to(Dtype::bfloat16);
-        }
-        throw std::runtime_error("Unknown target for to(): " + target);
-      }, py::arg("target"),
-           R"pbdoc(
-        Move module to specified device or change data type
-
-        Parameters:
-            target: Can be either a device ("cpu", "cuda") or a data type ("float32", "float16", "bfloat16")
-
-        Examples:
-            model.to("cuda")      # Move to CUDA device
-            model.to("float16")   # Convert to float16
-        )pbdoc")
+      .def("to", py::overload_cast<Device>(&nn::Module::to), py::arg("device"))
+      .def("to", py::overload_cast<Dtype>(&nn::Module::to), py::arg("dtype"))
       .def("registerModules", &nn::Module::registerModules)
       .def("eval", &nn::Module::eval)
-      .def("train", &nn::Module::train, py::arg("mode") = true, "Set training mode");
-
-  py::class_<nn::Conv2D, nn::Module>(nn, "Conv2D")
+      .def("train", &nn::Module::train, py::arg("mode") = true, "Set training mode")
+      .def("load", &nn::Module::load, py::arg("param_dict"), py::arg("device"))
+      .def("summary", [](const nn::Module& self) {
+         py::print(self.getTopologyText());
+      });
+  py::class_<nn::Conv2D, nn::Module, std::shared_ptr<nn::Conv2D>>(nn, "Conv2d")
       .def(py::init<int, int, Size2D, Size2D, Size2D, bool>(),
            py::arg("in_channels"), py::arg("out_channels"),
            py::arg("kernel_size") , py::arg("stride") = 1,
@@ -327,14 +347,85 @@ py::module_ create_nn_submodule(py::module_ &m) {
         return self.bias();
       }, "Get convolution bias");
 
-  py::class_<nn::Dropout, nn::Module>(nn, "Dropout")
-      .def(py::init<double>())
+  py::class_<nn::Dropout, nn::Module, std::shared_ptr<nn::Dropout>>(nn, "Dropout")
+      .def(py::init<double>(), py::arg("p") = 0.5)
       .def("forward", &nn::Dropout::forward);
 
-  py::class_<nn::Linear, nn::Module>(nn, "Linear")
+  py::class_<nn::Linear, nn::Module, std::shared_ptr<nn::Linear>>(nn, "Linear")
       .def(py::init<int, int>())
-      .def("forward", &nn::Linear::forward);
+      .def("forward", &nn::Linear::forward)
+      .def_property_readonly("weights", [](nn::Linear &self) {
+        return self.weights();
+      }, "Get Linear weights")
+      .def_property_readonly("bias", [](nn::Linear &self) {
+        return self.bias();
+      }, "Get Linear bias");
 
+  py::class_<nn::Relu, nn::Module, std::shared_ptr<nn::Relu>>(nn, "ReLU")
+      .def(py::init())
+      .def("forward", &nn::Relu::forward);
+
+  py::class_<nn::MaxPool2D, nn::Module, std::shared_ptr<nn::MaxPool2D>>(nn, "MaxPool2d")
+      .def(py::init<Size2D, Size2D, Size2D>(),
+           py::arg("kernel_size") , py::arg("stride"),
+           py::arg("padding") = 0,
+           R"pbdoc(
+            Applies a 2D max pooling over an input signal composed of several input planes.
+
+            Parameters:
+                kernel_size (Size2D): Size of the pooling window.
+                    Can be a single integer (for square kernel) or tuple (height, width).
+                stride (Size2D, optional): Stride of the pooling operation.
+                    Defaults to kernel_size if None.
+                padding (Size2D, optional): Zero-padding added to both sides of the input.
+                    Can be a single integer or tuple (height, width). Default: 0.
+
+            Shape:
+                - Input: (N, C, H_in, W_in)
+                - Output: (N, C, H_out, W_out)
+                Where:
+                    H_out = floor((H_in + 2*padding[0] - kernel_size[0])/stride[0] + 1)
+                    W_out = floor((W_in + 2*padding[1] - kernel_size[1])/stride[1] + 1)
+
+            Examples:
+                >>> pool = nn.MaxPool2d(kernel_size=3, stride=2)
+                >>> input = torch.randn(1, 1, 32, 32)
+                >>> output = pool(input)
+             )pbdoc")
+      .def("forward", &nn::MaxPool2D::forward);
+
+  py::class_<nn::Sequential, nn::Module, std::shared_ptr<nn::Sequential>>(nn, "Sequential")
+        .def(py::init<>())
+        .def(py::init<std::initializer_list<std::shared_ptr<nn::Module>>>())
+        .def(py::init([](py::list py_modules) {
+               std::vector<std::shared_ptr<nn::Module>> modules;
+               for (auto handle : py_modules) {
+                 modules.push_back(handle.cast<std::shared_ptr<nn::Module>>());
+               }
+               return nn::Sequential(modules);
+             }), py::arg("modules"), py::return_value_policy::copy )
+        .def("forward", &nn::Sequential::forward, py::arg("input"))
+        .def("size", &nn::Sequential::getsize)
+         .def("push_back",
+        static_cast<void (nn::Sequential::*)(const std::shared_ptr<nn::Module>&)>(
+            &nn::Sequential::pushBack),
+        py::arg("module"))
+        .def("__len__", &nn::Sequential::getsize)
+        .def("__getitem__", [](nn::Sequential& self, int index) -> nn::Module& {
+            if (index < 0 || index >= self.getsize())
+                throw py::index_error();
+            return self[index];
+        }, py::return_value_policy::reference_internal)
+        .def("__getitem__", [](const nn::Sequential& self,
+                              const nn::Sequential::Slice& slice) {
+            return self[slice];
+        })
+        .def("__iter__", [](nn::Sequential& self) {
+            return py::make_iterator(self.begin(), self.end());
+        }, py::keep_alive<0, 1>())
+        .def("__repr__", [](const nn::Sequential& self) {
+            return self.getTopologyText();
+        });
   return nn;
 }
 
@@ -363,6 +454,14 @@ py::module_ create_optim_submodule(py::module_ &m) {
            py::arg("eps") = 1e-8f,
            py::arg("weight_decay") = 0.0f,
            py::arg("amsgrad") = false);
+
+    py::class_<optim::AdaDelta, optim::Optimizer>(optim, "AdaDelta")
+      .def(py::init<std::vector<Tensor*>&&, float, float, float, float>(),
+           py::arg("parameters"),
+           py::arg("lr") = 1.0f,
+           py::arg("rho") = 0.9f,
+           py::arg("eps") = 1e-6f,
+           py::arg("weightDecay") = 0.f);
 
   py::class_<optim::AdamW, optim::Optimizer>(optim, "AdamW")
       .def(py::init<std::vector<Tensor*>&&, float, const std::pair<float, float>&, float, float, bool>(),
@@ -614,8 +713,7 @@ void create_transforms_submodule(py::module_ &data){
 
 }
 
-PYBIND11_MODULE(pytt, m) {
-    m.doc() = "A deep learning framework for faster vision task";
+void bindDeviceDtype(py::module &m) {
     py::enum_<Device>(m, "Device")
         .value("CPU", Device::CPU)
         .value("CUDA", Device::CUDA)
@@ -626,7 +724,13 @@ PYBIND11_MODULE(pytt, m) {
         .value("float32", Dtype::float32)
         .value("float16", Dtype::float16)
         .value("bfloat16", Dtype::bfloat16);
+    py::implicitly_convertible<std::string, Device>();
+    py::implicitly_convertible<std::string, Dtype>();
+}
 
+PYBIND11_MODULE(pytt, m) {
+    m.doc() = "A deep learning framework for faster vision task";
+    bindDeviceDtype(m);
     bind_Tensor(m);
     bindSize2D(m);
     auto nn = create_nn_submodule(m);

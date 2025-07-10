@@ -20,6 +20,19 @@ void Module::getTopologyTextHelper(std::stringstream& ss, int depth) const {
     }
 }
 
+void Module::register_tensor(const std::string& name, Tensor* tensor) {
+    std::string full_name = name_ + "." + name;
+    named_tensors_[full_name] = tensor;
+ }
+
+std::vector<std::string> Module::tensor_names() {
+  std::vector<std::string> keys;
+  for (const auto& pair : named_tensors_) {
+     keys.push_back(pair.first);
+  }
+  return keys;
+}
+
 std::vector<Tensor *> Module::parameters() {
   std::vector<Tensor *> ret;
   for (auto &module : subModules_) {
@@ -35,6 +48,7 @@ std::vector<Tensor *> Module::states() {
   for (auto &module : subModules_) {
     for (auto p : module.get().states()) {
       ret.push_back(p);
+
     }
   }
   return ret;
@@ -49,6 +63,21 @@ void Module::resetParameters() {
 void Module::zeroGrad() {
   for (auto &module : subModules_) {
     module.get().zeroGrad();
+  }
+}
+
+void Module::load(std::map<std::string, Tensor*> param_dict, Device device) {
+  for (auto &module : subModules_) {
+    for (auto name : module.get().tensor_names()) {
+        auto src_tensor  = param_dict.count(name) ? named_tensors_[name] : nullptr;
+        Tensor* dest_tensor  = module.get().get_tensor(name);
+        if (src_tensor  == nullptr)
+            std::cerr << "Warning: Tensor " << name << " not found in param_dict\n";
+        else{
+            *dest_tensor  = *src_tensor ;
+        }
+        dest_tensor ->to(device);
+    }
   }
 }
 
@@ -119,8 +148,11 @@ MultiheadAttention::MultiheadAttention(int32_t inFeatures, int32_t head, int is_
     : head_(head), is_casual_(is_casual) , useBias_(bias), useprojBias_(bias_proj),
     qkv_proj_(inFeatures, inFeatures*3, bias), last_proj_(inFeatures, inFeatures, bias_proj) {
     registerModules({qkv_proj_, last_proj_});
+    std::string  qkv_proj_name =  qkv_proj_.name() + ".qkv_proj";
+    std::string  last_proj_name =  last_proj_.name() + ".last_proj";
+    qkv_proj_.set_name(qkv_proj_name);
+    last_proj_.set_name(last_proj_name);
     MultiheadAttention::resetParameters();
-
 }
 
 Tensor MultiheadAttention::forward(Tensor &input) {
@@ -176,9 +208,9 @@ void MultiheadAttention::zeroGrad() {
 
 Linear::Linear(int32_t inFeatures, int32_t outFeatures, bool bias)
     : inFeatures_(inFeatures), outFeatures_(outFeatures), useBias_(bias) {
-  weights_ = Tensor::shape({outFeatures, inFeatures}, true);
+  REGISTER_TENSOR(weights_ , Tensor::shape({outFeatures, inFeatures}, true));
   if (bias) {
-    bias_ = Tensor::shape({outFeatures}, true);
+    REGISTER_TENSOR(bias_ ,Tensor::shape({outFeatures}, true));
   }
   Linear::resetParameters();
 }
@@ -246,10 +278,10 @@ Conv1D::Conv1D(int32_t inFeatures, int32_t outFeatures, Size1D kernelSize,
       stride_(stride),
       padding_(padding),
       useBias_(bias){
-  weights_ = Tensor::shape(
-      {outFeatures, inFeatures, kernelSize_.d}, true);
+  REGISTER_TENSOR(weights_ , Tensor::shape(
+      {outFeatures, inFeatures, kernelSize_.d}, true));
   if (bias) {
-    bias_ = Tensor::shape({outFeatures}, true);
+    REGISTER_TENSOR(bias_ , Tensor::shape({outFeatures}, true));
   }
   Conv1D::resetParameters();
 }
@@ -294,10 +326,11 @@ Conv2D::Conv2D(int32_t inFeatures, int32_t outFeatures, Size2D kernelSize,
       stride_(stride),
       padding_(padding),
       useBias_(bias){
-  weights_ = Tensor::shape(
-      {outFeatures, inFeatures, kernelSize_.h, kernelSize_.w}, true);
+
+  REGISTER_TENSOR(weights_ , Tensor::shape(
+      {outFeatures, inFeatures, kernelSize_.h, kernelSize_.w}, true));
   if (bias) {
-    bias_ = Tensor::shape({outFeatures}, true);
+    REGISTER_TENSOR(bias_ , Tensor::shape({outFeatures}, true));
   }
   Conv2D::resetParameters();
 }
@@ -342,12 +375,12 @@ BatchNorm2D::BatchNorm2D(int32_t numFeatures, float eps, float momentum,
       trackRunningStats_(trackRunningStats),
       numBatchesTracked_(0) {
   if (affine_) {
-    weights_ = Tensor::shape({numFeatures_}, true);
-    bias_ = Tensor::shape({numFeatures_}, true);
+    REGISTER_TENSOR(weights_ , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(bias_ , Tensor::shape({numFeatures_}, true));
   }
   if (trackRunningStats_) {
-    runningMean_ = Tensor::shape({numFeatures_}, true);
-    runningVar_ = Tensor::shape({numFeatures_}, true);
+    REGISTER_TENSOR(runningMean_ , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(runningVar_ , Tensor::shape({numFeatures_}, true));
   }
 
   BatchNorm2D::resetParameters();

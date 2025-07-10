@@ -4,7 +4,6 @@
 namespace TinyTorch::nn {
 class BatchNorm2D : public Module {
  public:
-     std::string name() const override { return "BatchNorm2D"; }
   explicit BatchNorm2D(int32_t numFeatures, float eps = 1e-5,
                        float momentum = 0.1f, bool affine = true,
                        bool trackRunningStats = true);
@@ -34,5 +33,6 @@ class BatchNorm2D : public Module {
   Tensor runningMean_;
   Tensor runningVar_;
   int32_t numBatchesTracked_;
+  std::string name_ = "BatchNorm2D";
 };
 }

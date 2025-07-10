@@ -261,8 +261,8 @@ class YoloLoss : public nn::Module {
             if (n != 0){
                 auto loss_x  = (Function::bceLossWithSigmoid(x.squeeze()[obj_mask_t], y_true_t[{{},{},{},{},{0,1}}].squeeze()[obj_mask_t], TinyTorch::NONE) * box_loss_scale_t[obj_mask_t]).mean();
                 auto loss_y  = (Function::bceLossWithSigmoid(y.squeeze()[obj_mask_t], y_true_t[{{},{},{},{},{1,2}}].squeeze()[obj_mask_t], TinyTorch::NONE) * box_loss_scale_t[obj_mask_t]).mean();
-                auto loss_w  = (Function::mseLoss(w.squeeze()[obj_mask_t], y_true_t[{{},{},{},{},{2,3}}].squeeze()[obj_mask_t], TinyTorch::NONE) * box_loss_scale_t[obj_mask_t]).mean();
-                auto loss_h  = (Function::mseLoss(h.squeeze()[obj_mask_t], y_true_t[{{},{},{},{},{3,4}}].squeeze()[obj_mask_t], TinyTorch::NONE) * box_loss_scale_t[obj_mask_t]).mean();
+                auto loss_w  = (Function::mseloss(w.squeeze()[obj_mask_t], y_true_t[{{},{},{},{},{2,3}}].squeeze()[obj_mask_t], TinyTorch::NONE) * box_loss_scale_t[obj_mask_t]).mean();
+                auto loss_h  = (Function::mseloss(h.squeeze()[obj_mask_t], y_true_t[{{},{},{},{},{3,4}}].squeeze()[obj_mask_t], TinyTorch::NONE) * box_loss_scale_t[obj_mask_t]).mean();
                 auto loss_loc = (loss_x + loss_y + loss_h + loss_w) * 0.1;
                 auto loss_cls = Function::bceLossWithSigmoid(Tensor(pred_cls.data().permute({0,1,3,4,2}), true)[obj_mask_t.unsqueeze(-1)],
                                                              y_true_t[{{},{},{},{},{5,-1}}][obj_mask_t.unsqueeze(-1)], TinyTorch::MEAN);

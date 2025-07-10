@@ -1,6 +1,10 @@
 #pragma once
 #include "../Tensor.h"
 
+#define REGISTER_TENSOR(name, content)   \
+    name = content;                      \
+    register_tensor(#name, &name);
+
 namespace TinyTorch::nn {
 class Module {
  public:
@@ -9,7 +13,9 @@ class Module {
   virtual std::vector<Tensor *> states();
   virtual void resetParameters();
   virtual void zeroGrad();
-  virtual std::string name() const { return "Module"; }
+  std::string name() const { return name_; }
+  virtual std::string className() const = 0;
+  void set_name(const std::string& name) { name_ = name; }
   virtual Tensor forward(Tensor &x) { return {}; }
   virtual Tensor forward(Tensor &x, Tensor &a) { return {}; }
   virtual Tensor forward(std::vector<Tensor> &x) { return {}; }
@@ -33,14 +39,25 @@ class Module {
   void to(Dtype T);
   void eval() { train(false); }
   void train(bool mode = true) { setTraining(mode); }
+
+  // print Topology Graph
   std::string getTopologyText() const {
             std::stringstream ss;
             getTopologyTextHelper(ss, 0);
             return ss.str();
         }
-   virtual void getTopologyTextHelper(std::stringstream& ss, int depth) const;
- protected:
 
+  virtual void getTopologyTextHelper(std::stringstream& ss, int depth) const;
+   // load param
+  void register_tensor(const std::string& name, Tensor* tensor);
+  static Tensor* get_tensor(const std::string& full_name) {
+        return named_tensors_.count(full_name) ? named_tensors_[full_name] : nullptr;
+    }
+  void load(std::map<std::string, Tensor*> param_dict, Device device = Device::CPU);
+  std::vector<std::string> tensor_names();
+ protected:
+  static inline std::map<std::string, Tensor*> named_tensors_;
+  std::string name_ = "Module";
   virtual void setTraining(bool mode) { training_ = mode; }
 
   bool training_ = true;

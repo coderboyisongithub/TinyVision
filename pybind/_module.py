@@ -20,6 +20,7 @@ class AutoRegisterMeta(UnifiedMeta):
             instance.registerModules(children)
 
         return instance
+
 class Module(tt.nn.Module, metaclass=AutoRegisterMeta):
     def __init__(self):
         super().__init__()

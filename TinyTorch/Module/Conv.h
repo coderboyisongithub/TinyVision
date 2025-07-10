@@ -3,7 +3,6 @@
 namespace TinyTorch::nn {
 class Conv2D : public Module {
  public:
-    std::string name() const override { return "Conv2D"; }
   Conv2D(int32_t inFeatures, int32_t outFeatures, Size2D kernelSize,
          Size2D stride = 1, Size2D padding = 0, bool bias = true);
 
@@ -26,12 +25,12 @@ class Conv2D : public Module {
   bool useBias_;
   Tensor weights_;
   Tensor bias_;
+  std::string name_ = "Conv2D";
 };
 
 
 class Conv1D : public Module {
  public:
-    std::string name() const override { return "Conv1D"; }
   Conv1D(int32_t inFeatures, int32_t outFeatures, Size1D kernelSize,
          Size1D stride = 1, Size1D padding = 0, bool bias = true);
   Tensor forward(Tensor &input) override;
@@ -52,6 +51,7 @@ class Conv1D : public Module {
   bool useBias_;
   Tensor weights_;
   Tensor bias_;
+  std::string name_ = "Conv1D";
 };
 
 }

@@ -5,7 +5,6 @@ namespace TinyTorch::nn {
 
 class Sequential : public Module {
  public:
-  std::string name() const override { return "Sequential"; }
   struct Slice {
     int start;
     int end;
@@ -19,26 +18,45 @@ class Sequential : public Module {
     }
   };
 
-  template <typename... Modules>
+  template <typename... Modules,
+            typename = std::enable_if_t<(std::is_same_v<std::decay_t<Modules>, std::shared_ptr<Module>> && ...)>>
   explicit Sequential(Modules &&...modules) {
     modules_.reserve(sizeof...(Modules));
     pushBack(std::forward<Modules>(modules)...);
   }
-
+  explicit Sequential(std::vector<std::shared_ptr<Module>> modules) {
+    modules_.reserve(modules.size());
+    for (size_t i = 0; i < modules.size(); ++i) {
+      auto& module = modules[i];
+      std::string new_name = name() + "." + std::to_string(i) + "_" + module->name();
+      module->set_name(new_name);
+      modules_.emplace_back(std::move(module));
+    }
+  }
   Sequential(std::initializer_list<std::shared_ptr<Module>> modules) {
     modules_.reserve(modules.size());
+    int index = modules_.size();
     for (const auto &module : modules) {
+      std::string new_name = name() + "." + std::to_string(index++) + "_" + module->name();
+      module->set_name(new_name);
       modules_.emplace_back(module);
     }
   }
 
+
   template <typename ModuleType>
   void pushBack(ModuleType &&module) {
+    int index = modules_.size();
+    std::string new_name = name() + "." + std::to_string(index++) + "_" + module->name();
+    module->set_name(new_name);
     modules_.push_back(
         std::make_shared<ModuleType>(std::forward<ModuleType>(module)));
   }
 
   void pushBack(const std::shared_ptr<Module> &module) {
+    int index = modules_.size();
+    std::string new_name = name() + "." + std::to_string(index++) + "_" + module->name();
+    module->set_name(new_name);
     modules_.emplace_back(module);
   }
 
@@ -66,7 +84,10 @@ class Sequential : public Module {
     }
     return result;
   }
-
+  auto begin() { return modules_.begin(); }
+    auto end() { return modules_.end(); }
+    auto begin() const { return modules_.begin(); }
+    auto end() const { return modules_.end(); }
  private:
   void setTraining(bool mode) override;
   template <typename First, typename Second, typename... Rest>
@@ -79,8 +100,9 @@ class Sequential : public Module {
     void getTopologyTextHelper(std::stringstream& ss, int depth) const override {
         ss << std::string(depth * 2, ' ') << "|--Sequential" << std::endl;
         for (const auto& module : modules_) {
-            module->getTopologyTextHelper(ss, depth + 1); // 合法：派生类访问基类 protected 方法
+            module->getTopologyTextHelper(ss, depth + 1);
         }
     }
+  std::string name_ = "Sequential";
 };
 }

@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(TinyTorch_pybind)
-
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory(../../thirdparty/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/../thirdparty/pybind11)
 
 # 源文件
@@ -72,6 +73,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_definitions(TinyTorch_pybind PRIVATE NDEBUG)
 else()
     target_compile_definitions(TinyTorch_pybind PRIVATE DEBUG)
+endif()
+
+if(MSVC)
+    target_compile_options(TinyTorch_pybind PRIVATE /bigobj)
 endif()
 
 # 安装规则

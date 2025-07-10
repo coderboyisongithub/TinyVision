@@ -4,7 +4,6 @@ namespace TinyTorch::nn {
 class Linear : public Module {
 
  public:
-   std::string name() const override { return "Linear"; }
   Linear(int32_t inFeatures, int32_t outFeatures, bool bias = true);
   Tensor forward(Tensor &input) override;
   std::vector<Tensor *> parameters() override;
@@ -19,6 +18,6 @@ class Linear : public Module {
   bool useBias_;
   Tensor weights_;
   Tensor bias_;
+  std::string name_ = "Linear";
 };
-
 }
