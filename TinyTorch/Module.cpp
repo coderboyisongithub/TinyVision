@@ -14,16 +14,11 @@
 namespace TinyTorch::nn {
 
 void Module::getTopologyTextHelper(std::stringstream& ss, int depth) const {
-    ss << std::string(depth * 2, ' ') << "|--" << name() << std::endl;
+    ss << std::string(depth * 2, ' ') << "|-- " << name() << " (" << class_name() << ")" <<std::endl;
     for (const auto& submod : subModules_) {
         submod.get().getTopologyTextHelper(ss, depth + 1);
     }
 }
-
-void Module::register_tensor(const std::string& name, Tensor* tensor) {
-    std::string full_name = name_ + "." + name;
-    named_tensors_[full_name] = tensor;
- }
 
 std::vector<std::string> Module::tensor_names() {
   std::vector<std::string> keys;
@@ -66,20 +61,42 @@ void Module::zeroGrad() {
   }
 }
 
-void Module::load(std::map<std::string, Tensor*> param_dict, Device device) {
+void Module::load(std::map<std::string, Tensor> param_dict, Device device) {
   for (auto &module : subModules_) {
     for (auto name : module.get().tensor_names()) {
-        auto src_tensor  = param_dict.count(name) ? named_tensors_[name] : nullptr;
-        Tensor* dest_tensor  = module.get().get_tensor(name);
-        if (src_tensor  == nullptr)
-            std::cerr << "Warning: Tensor " << name << " not found in param_dict\n";
-        else{
-            *dest_tensor  = *src_tensor ;
+        std::string all_name = module.get().name().append("."+name);
+        auto it = param_dict.find(all_name);
+        if (it == param_dict.end()) {
+          std::cerr << "Warning: " << all_name << " not found\n";
+          continue;
         }
-        dest_tensor ->to(device);
+        std::cerr << "name: " << name << "\n";
+        Tensor* dest_tensor = module.get().get_tensor(name);
+        if (!dest_tensor) {
+          std::cerr << "Error: Null tensor for " << all_name << "\n";
+          continue;
+        }
+         Tensor src_tensor = param_dict[all_name];
+         if (src_tensor.shape() != dest_tensor->shape()){
+                    std::cerr << "Warning: Tensor " << all_name << " shape=[";
+                    for (size_t dim : dest_tensor->shape()) {
+                        std::cerr << dim << " ";
+                    }
+                    std::cerr << "] " << " is not same as the param your provide.";
+                    std::cerr << " shape=[";
+                    for (size_t dim : src_tensor.shape()) {
+                        std::cerr << dim << " ";
+                    }
+                    std::cerr << "] ";
+                }
+        else{
+            std::cerr << "load" << all_name << "success";
+            *dest_tensor = Tensor(std::move(src_tensor.data()));
+            }
+        }
     }
-  }
 }
+
 
 void Module::to(Device device) {
   for (auto &module : subModules_) {
@@ -109,6 +126,17 @@ std::vector<Tensor *> Sequential::parameters() {
   std::vector<Tensor *> ret;
   for (auto &module : modules_) {
     for (auto p : module->parameters()) {
+      ret.push_back(p);
+    }
+  }
+  return ret;
+}
+
+std::vector<std::string> Sequential::tensor_names() {
+  std::vector<std::string> ret;
+  for (auto &module : modules_) {
+    for (auto p : module->tensor_names()) {
+      p = module->name() + "." + p;
       ret.push_back(p);
     }
   }
@@ -208,22 +236,22 @@ void MultiheadAttention::zeroGrad() {
 
 Linear::Linear(int32_t inFeatures, int32_t outFeatures, bool bias)
     : inFeatures_(inFeatures), outFeatures_(outFeatures), useBias_(bias) {
-  REGISTER_TENSOR(weights_ , Tensor::shape({outFeatures, inFeatures}, true));
+  REGISTER_TENSOR(weight , Tensor::shape({outFeatures, inFeatures}, true));
   if (bias) {
-    REGISTER_TENSOR(bias_ ,Tensor::shape({outFeatures}, true));
+    REGISTER_TENSOR(bias ,Tensor::shape({outFeatures}, true));
   }
   Linear::resetParameters();
 }
 
 Tensor Linear::forward(Tensor &input) {
-  return Function::linear(input, weights_, bias_);
+  return Function::linear(input, weight_, bias_);
 }
 
 std::vector<Tensor *> Linear::parameters() {
   if (useBias_) {
-    return {&weights_, &bias_};
+    return {&weight_, &bias_};
   }
-  return {&weights_};
+  return {&weight_};
 }
 
 
@@ -231,16 +259,16 @@ std::vector<Tensor *> Linear::parameters() {
 std::vector<Tensor *> Linear::states() { return parameters(); }
 
 void Linear::resetParameters() {
-  Init::kaimingUniform(weights_, std::sqrt(5.f));
+  Init::kaimingUniform(weight_, std::sqrt(5.f));
   if (useBias_) {
-    auto fanIn = Init::calculateFan(weights_).first;
+    auto fanIn = Init::calculateFan(weight_).first;
     const auto bound = fanIn > 0 ? 1.f / std::sqrt((float)fanIn) : 0;
     Init::uniform(bias_, -bound, bound);
   }
 }
 
 void Linear::zeroGrad() {
-  weights_.zeroGrad();
+  weight_.zeroGrad();
   if (useBias_) {
     bias_.zeroGrad();
   }
@@ -278,32 +306,30 @@ Conv1D::Conv1D(int32_t inFeatures, int32_t outFeatures, Size1D kernelSize,
       stride_(stride),
       padding_(padding),
       useBias_(bias){
-  REGISTER_TENSOR(weights_ , Tensor::shape(
-      {outFeatures, inFeatures, kernelSize_.d}, true));
   if (bias) {
-    REGISTER_TENSOR(bias_ , Tensor::shape({outFeatures}, true));
+    REGISTER_TENSOR(bias , Tensor::shape({outFeatures}, true));
   }
   Conv1D::resetParameters();
 }
 
 Tensor Conv1D::forward(Tensor &input) {
-  return Function::conv1d(input, weights_, bias_, stride_, padding_);
+  return Function::conv1d(input, weight_, bias_, stride_, padding_);
 }
 
 std::vector<Tensor *> Conv1D::parameters() {
   if (useBias_) {
-    return {&weights_, &bias_};
+    return {&weight_, &bias_};
   }
-  return {&weights_};
+  return {&weight_};
 }
 
 
 std::vector<Tensor *> Conv1D::states() { return parameters(); }
 
 void Conv1D::resetParameters() {
-  Init::kaimingUniform(weights_, std::sqrt(5.f));
+  Init::kaimingUniform(weight_, std::sqrt(5.f));
   if (useBias_) {
-    auto fanIn = Init::calculateFan(weights_).first;
+    auto fanIn = Init::calculateFan(weight_).first;
     if (fanIn != 0) {
       const auto bound = 1.f / std::sqrt((float)fanIn);
       Init::uniform(bias_, -bound, bound);
@@ -312,7 +338,7 @@ void Conv1D::resetParameters() {
 }
 
 void Conv1D::zeroGrad() {
-  weights_.zeroGrad();
+  weight_.zeroGrad();
   if (useBias_) {
     bias_.zeroGrad();
   }
@@ -327,31 +353,31 @@ Conv2D::Conv2D(int32_t inFeatures, int32_t outFeatures, Size2D kernelSize,
       padding_(padding),
       useBias_(bias){
 
-  REGISTER_TENSOR(weights_ , Tensor::shape(
+  REGISTER_TENSOR(weight, Tensor::shape(
       {outFeatures, inFeatures, kernelSize_.h, kernelSize_.w}, true));
   if (bias) {
-    REGISTER_TENSOR(bias_ , Tensor::shape({outFeatures}, true));
+    REGISTER_TENSOR(bias , Tensor::shape({outFeatures}, true));
   }
   Conv2D::resetParameters();
 }
 
 Tensor Conv2D::forward(Tensor &input) {
-  return Function::conv2d(input, weights_, bias_, stride_, padding_);
+  return Function::conv2d(input, weight_, bias_, stride_, padding_);
 }
 
 std::vector<Tensor *> Conv2D::parameters() {
   if (useBias_) {
-    return {&weights_, &bias_};
+    return {&weight_, &bias_};
   }
-  return {&weights_};
+  return {&weight_};
 }
 
 std::vector<Tensor *> Conv2D::states() { return parameters(); }
 
 void Conv2D::resetParameters() {
-  Init::kaimingUniform(weights_, std::sqrt(5.f));
+  Init::kaimingUniform(weight_, std::sqrt(5.f));
   if (useBias_) {
-    auto fanIn = Init::calculateFan(weights_).first;
+    auto fanIn = Init::calculateFan(weight_).first;
     if (fanIn != 0) {
       const auto bound = 1.f / std::sqrt((float)fanIn);
       Init::uniform(bias_, -bound, bound);
@@ -360,7 +386,7 @@ void Conv2D::resetParameters() {
 }
 
 void Conv2D::zeroGrad() {
-  weights_.zeroGrad();
+  weight_.zeroGrad();
   if (useBias_) {
     bias_.zeroGrad();
   }
@@ -375,12 +401,12 @@ BatchNorm2D::BatchNorm2D(int32_t numFeatures, float eps, float momentum,
       trackRunningStats_(trackRunningStats),
       numBatchesTracked_(0) {
   if (affine_) {
-    REGISTER_TENSOR(weights_ , Tensor::shape({numFeatures_}, true));
-    REGISTER_TENSOR(bias_ , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(weights , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(bias , Tensor::shape({numFeatures_}, true));
   }
   if (trackRunningStats_) {
-    REGISTER_TENSOR(runningMean_ , Tensor::shape({numFeatures_}, true));
-    REGISTER_TENSOR(runningVar_ , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(runningMean , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(runningVar , Tensor::shape({numFeatures_}, true));
   }
 
   BatchNorm2D::resetParameters();

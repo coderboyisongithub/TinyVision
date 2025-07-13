@@ -3,6 +3,7 @@
 namespace TinyTorch::nn {
 class MaxPool2D : public Module {
  public:
+    REGISTER_MODULE_NAME(MaxPool2D)
   explicit MaxPool2D(Size2D kernelSize,
                      std::optional<Size2D> stride = std::nullopt,
                      Size2D padding = 0)
@@ -16,6 +17,5 @@ class MaxPool2D : public Module {
   Size2D kernelSize_;
   Size2D stride_;
   Size2D padding_;
-  std::string name_ = "MaxPool2D";
 };
 }

@@ -45,8 +45,6 @@ class Tensor {
   explicit Tensor(const Array4d &values4d, bool requiresGrad = false);
   explicit Tensor(const Array5d &values5d, bool requiresGrad = false);
 
-
-
   static Tensor shape(const Shape &shape, bool requiresGrad = false);
   static Tensor scalar(const float &value, bool requiresGrad = false);
   static Tensor scalar(const float &value, bool requiresGrad, Device device, Dtype type);

@@ -323,6 +323,7 @@ py::module_ create_nn_submodule(py::module_ &m) {
       .def("eval", &nn::Module::eval)
       .def("train", &nn::Module::train, py::arg("mode") = true, "Set training mode")
       .def("load", &nn::Module::load, py::arg("param_dict"), py::arg("device"))
+      .def("set_name", &nn::Module::set_name, py::arg("name"))
       .def("summary", [](const nn::Module& self) {
          py::print(self.getTopologyText());
       });
@@ -403,7 +404,7 @@ py::module_ create_nn_submodule(py::module_ &m) {
                  modules.push_back(handle.cast<std::shared_ptr<nn::Module>>());
                }
                return nn::Sequential(modules);
-             }), py::arg("modules"), py::return_value_policy::copy )
+             }), py::arg("modules") )
         .def("forward", &nn::Sequential::forward, py::arg("input"))
         .def("size", &nn::Sequential::getsize)
          .def("push_back",
@@ -496,7 +497,6 @@ void create_functional_submodule(py::module_ &nn) {
                            return Function::mseloss(input, target, LossReduction::NONE);
                          else if(reduction == "sum")
                            return Function::mseloss(input, target, LossReduction::SUM);
-
                           },py::arg("input"),
                             py::arg("target"),
                             py::arg("reduction") = 1

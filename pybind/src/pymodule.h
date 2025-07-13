@@ -6,6 +6,7 @@ namespace TinyTorch::nn {
 class PyModule : public nn::Module {
 public:
     using Module::Module;
+    REGISTER_MODULE_NAME(PyModule)
     Tensor forward(Tensor& x) override {
         PYBIND11_OVERRIDE_PURE(
             Tensor,
