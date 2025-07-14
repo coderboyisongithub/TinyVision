@@ -255,7 +255,11 @@ typedef enum ShapeCompatible_ {
   TensorImpl& att, TensorImpl& preatt, int32_t NH ,int is_casual) _T;          \
   _H std::vector<TensorImpl> attention_backward_qkv(const TensorImpl& dout,    \
   TensorImpl& inp, TensorImpl& qkvr, TensorImpl& vaccum,                       \
-  TensorImpl& att, int32_t NH, int is_casual ) _T;
+  TensorImpl& att, int32_t NH, int is_casual ) _T;                             \
+  _H TensorImpl  avgpool_backward(                                             \
+    const TensorImpl gradOut,                                                  \
+    int kSize,                                                                 \
+    float scale) _T;
 
 class TensorImpl;
 class TensorOperations {

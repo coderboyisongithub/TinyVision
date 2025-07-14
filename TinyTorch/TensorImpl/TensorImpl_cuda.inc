@@ -16,6 +16,7 @@
 #include "kernel/bernoulli.inc"
 #include "kernel/layernorm.inc"
 #include "kernel/attention_casual.inc"
+#include "kernel/avgpool2d.inc"
 
 namespace TinyTorch {
 

@@ -961,6 +961,55 @@ std::vector<TensorImpl> FuncMaxPool2D::backward(const TensorImpl& grad) {
   return ret;
 }
 
+TensorImpl FuncAvgPool2D::forward(const std::vector<const Tensor*>& inputs) {
+    auto& shape = inputs[0]->shape();
+    ASSERT(shape.size() == 3 || shape.size() == 4);
+    int32_t batch = (shape.size() == 4) ? shape[0] : 1;
+    int32_t channels = (shape.size() == 4) ? shape[1] : shape[0];
+    int32_t height = (shape.size() == 4) ? shape[2] : shape[1];
+    int32_t width = (shape.size() == 4) ? shape[3] : shape[2];
+
+    auto outH = (height - kernelSize_.h + 2 * padding_.h) / stride_.h + 1;
+    auto outW = (width - kernelSize_.w + 2 * padding_.w) / stride_.w + 1;
+
+    auto col = inputs[0]->data().im2col(kernelSize_, stride_, padding_);
+    col.reshape_({-1, kernelSize_.h * kernelSize_.w});  // [N*outH*outW, kH*kW]
+    int32_t col_rows = batch * channels * outH * outW;
+    int32_t col_cols = kernelSize_.h * kernelSize_.w;
+
+    TensorImpl meanMatrix = TensorImpl::shape({1, col_cols});
+    float scale = 1.0f / col_cols;
+    meanMatrix.fill_(scale);
+    TensorImpl ret = TensorImpl::shape({col_rows, 1});
+    col.ops()->gemm(
+        ret.data(),
+        col.data(),
+        meanMatrix.data(),
+        col_rows,
+        col_cols,
+        1,
+        false,
+        true
+    );
+    ret.reshape_({batch, channels, outH, outW});
+    return ret;
+}
+
+std::vector<TensorImpl> FuncAvgPool2D::backward(const TensorImpl& gradOutput) {
+    const auto& savedTensors = getSavedTensors();
+    const auto& inputShape = savedTensors[0].shape();
+    int32_t kSize = kernelSize_.h * kernelSize_.w;
+    float scale = 1.0f / kSize;
+    auto gradCol = gradOutput.ops()->avgpool_backward(gradOutput, kSize, scale);
+    TensorImpl gradInput = gradCol.col2im(
+        inputShape,
+        kernelSize_,
+        stride_,
+        padding_
+    );
+    return {gradInput};
+}
+
 TensorImpl FuncConv1D::forward(const std::vector<const Tensor*>& inputs) {
     saveForBackward(inputs);
     auto& input = inputs[0]->data();

@@ -390,7 +390,7 @@ py::module_ create_nn_submodule(py::module_ &m) {
 
             Examples:
                 >>> pool = nn.MaxPool2d(kernel_size=3, stride=2)
-                >>> input = torch.randn(1, 1, 32, 32)
+                >>> input = tt.randn(1, 1, 32, 32)
                 >>> output = pool(input)
              )pbdoc")
       .def("forward", &nn::MaxPool2D::forward);

@@ -20,14 +20,6 @@ void Module::getTopologyTextHelper(std::stringstream& ss, int depth) const {
     }
 }
 
-std::vector<std::string> Module::tensor_names() {
-  std::vector<std::string> keys;
-  for (const auto& pair : named_tensors_) {
-     keys.push_back(pair.first);
-  }
-  return keys;
-}
-
 std::vector<Tensor *> Module::parameters() {
   std::vector<Tensor *> ret;
   for (auto &module : subModules_) {
@@ -63,19 +55,14 @@ void Module::zeroGrad() {
 
 void Module::load(std::map<std::string, Tensor> param_dict, Device device) {
   for (auto &module : subModules_) {
-    for (auto name : module.get().tensor_names()) {
-        std::string all_name = module.get().name().append("."+name);
+    for (auto name : module.get().get_named_tensors_()) {
+        std::string all_name = module.get().name().append("."+name.first);
         auto it = param_dict.find(all_name);
         if (it == param_dict.end()) {
           std::cerr << "Warning: " << all_name << " not found\n";
           continue;
         }
-        std::cerr << "name: " << name << "\n";
-        Tensor* dest_tensor = module.get().get_tensor(name);
-        if (!dest_tensor) {
-          std::cerr << "Error: Null tensor for " << all_name << "\n";
-          continue;
-        }
+        Tensor* dest_tensor = name.second;
          Tensor src_tensor = param_dict[all_name];
          if (src_tensor.shape() != dest_tensor->shape()){
                     std::cerr << "Warning: Tensor " << all_name << " shape=[";
@@ -87,10 +74,10 @@ void Module::load(std::map<std::string, Tensor> param_dict, Device device) {
                     for (size_t dim : src_tensor.shape()) {
                         std::cerr << dim << " ";
                     }
-                    std::cerr << "] ";
+                    std::cerr << "] \n";
                 }
         else{
-            std::cerr << "load" << all_name << "success";
+            std::cerr << "load " << all_name << " success\n";
             *dest_tensor = Tensor(std::move(src_tensor.data()));
             }
         }
@@ -132,14 +119,13 @@ std::vector<Tensor *> Sequential::parameters() {
   return ret;
 }
 
-std::vector<std::string> Sequential::tensor_names() {
-  std::vector<std::string> ret;
+std::map<std::string, Tensor *> Sequential::get_named_tensors_() const {
+  std::map<std::string,Tensor*> ret;
   for (auto &module : modules_) {
-    for (auto p : module->tensor_names()) {
-      p = module->name() + "." + p;
-      ret.push_back(p);
+    for (auto m : module->get_named_tensors_()) {
+        ret[module->name() + "." + m.first] = m.second;
     }
-  }
+    }
   return ret;
 }
 

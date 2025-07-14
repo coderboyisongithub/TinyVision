@@ -1989,6 +1989,19 @@ TensorImpl TensorOpsCUDA::upsample_backward(const TensorImpl& a , int32_t scale_
   return ret;
 }
 
+TensorImpl TensorOpsCUDA::avgpool_backward(
+    const TensorImpl gradOut,
+    int kSize,
+    float scale
+) {
+    TensorImpl gradCol = TensorImpl::shape({gradOut.numel(), kSize}, gradOut.device(), gradOut.type());
+    avgpool2d_backward_kernel<<<getGridSize(gradOut.numel()), getBlockSize()>>>(
+        gradCol.data(), gradOut.data(), gradOut.numel(), kSize, scale
+    );
+    CUDA_KERNEL_CHECK();
+    return gradCol;
+}
+
 TensorImpl TensorOpsCUDA::attention_forward_qkv(TensorImpl& inp, TensorImpl& vaccum, TensorImpl& qkvr,
                                  TensorImpl& att, TensorImpl& preatt, int32_t NH,int is_casual) {
     // inp is (B, T, 3C) QKV

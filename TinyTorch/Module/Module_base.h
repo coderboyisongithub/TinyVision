@@ -15,25 +15,16 @@ class Module {
     std::string class_name() const override { return _module_name; } \
     std::string name_ = #ClassName;   \
     std::map<std::string, Tensor*> named_tensors_;\
-    Tensor* get_tensor(const std::string& full_name) override{ \
-      return named_tensors_.count(full_name) ? named_tensors_[full_name] : nullptr;\
-    }                                                   \
-    std::vector<std::string> tensor_names() {   \
-        std::vector<std::string> keys;\
-        for (const auto& pair : named_tensors_) {\
-          keys.push_back(pair.first);\
-        }\
-        return keys;\
-   };
+    std::map<std::string, Tensor*> get_named_tensors_() const override{ \
+        return named_tensors_;\
+    }
+
   #define REGISTER_SEQMODULE_NAME(ClassName) \
       static constexpr auto _module_name = #ClassName; \
       std::string class_name() const override { return _module_name; } \
       std::string name_ = #ClassName;   \
       std::map<std::string, Tensor*> named_tensors_;\
-      Tensor* get_tensor(const std::string& full_name) override{ \
-        return named_tensors_.count(full_name) ? named_tensors_[full_name] : nullptr;\
-      }                                                   \
-      std::vector<std::string> tensor_names() override;
+      std::map<std::string, Tensor*> get_named_tensors_() const override;
 
  public:
   virtual ~Module() = default;
@@ -86,7 +77,9 @@ class Module {
         return named_tensors_[full_name];
     }
   void load(std::map<std::string, Tensor> param_dict, Device device = Device::CPU);
-  virtual std::vector<std::string> tensor_names();
+  virtual std::map<std::string, Tensor*> get_named_tensors_() const{
+        return named_tensors_;
+    }
 
   static constexpr auto _module_name = "Module";
   std::string name_ = "Module";

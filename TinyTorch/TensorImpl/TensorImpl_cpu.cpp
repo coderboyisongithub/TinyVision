@@ -1676,9 +1676,17 @@ std::vector<TensorImpl> TensorOpsCPU::split(
   return {grad1, grad2};
 }
 
+TensorImpl TensorOpsCPU::avgpool_backward( const TensorImpl gradOut, int kSize, float scale) {
+    TensorImpl gradCol = TensorImpl::shape({gradOut.numel(), kSize}, gradOut.device(), gradOut.type());
+   for (int i = 0; i < gradOut.numel(); ++i) {
+            float grad = gradOut.data()[i] * scale;
+            std::fill(gradCol.data() + i * kSize, gradCol.data() + (i + 1) * kSize, grad);
+   }
+   return gradCol;
+}
+
 TensorImpl TensorOpsCPU::upsample_forward(const TensorImpl& Q, int32_t scale_factor) {
   throw std::runtime_error("We have not implement in CPU yet");
-
 }
 
 TensorImpl TensorOpsCPU::upsample_backward(const TensorImpl& Q, int32_t scale_factor) {

@@ -45,6 +45,7 @@ enum FunctionType {
   Function_Softmax,
   Function_LogSoftmax,
   Function_MaxPool2D,
+  Function_AvgPool2D,
   Function_Conv2D,
   Function_Conv1D,
   Function_BatchNorm,
@@ -421,6 +422,18 @@ class FuncMaxPool2D : public Function {
   Size2D padding_;
   TensorImpl maxIndices_;
 };
+
+class FuncAvgPool2D : public Function {
+ public:
+  FuncAvgPool2D(Size2D kernelSize, Size2D stride, Size2D padding)
+      : kernelSize_(kernelSize), stride_(stride), padding_(padding) {}
+  DEFINE_FUNCTION_MEMBERS(Function_AvgPool2D)
+ private:
+  Size2D kernelSize_;
+  Size2D stride_;
+  Size2D padding_;
+};
+
 
 class FuncConv2D : public Function {
  public:
