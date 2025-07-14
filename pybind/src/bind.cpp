@@ -352,8 +352,13 @@ py::module_ create_nn_submodule(py::module_ &m) {
       .def(py::init<double>(), py::arg("p") = 0.5)
       .def("forward", &nn::Dropout::forward);
 
+  py::class_<nn::BatchNorm2D, nn::Module, std::shared_ptr<nn::BatchNorm2D>>(nn, "BatchNorm2d")
+      .def(py::init<int, float, float, bool, bool>(), py::arg("numFeatures"), py::arg("eps") = 1e-5,
+           py::arg("momentum") = 0.1f,py::arg("affine") = true,py::arg("trackRunningStats") = true)
+      .def("forward", &nn::BatchNorm2D::forward);
+
   py::class_<nn::Linear, nn::Module, std::shared_ptr<nn::Linear>>(nn, "Linear")
-      .def(py::init<int, int>())
+      .def(py::init<int, int>(), py::arg("in_channels"), py::arg("out_channels"))
       .def("forward", &nn::Linear::forward)
       .def_property_readonly("weights", [](nn::Linear &self) {
         return self.weights();
