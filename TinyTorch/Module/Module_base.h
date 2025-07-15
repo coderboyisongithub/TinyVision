@@ -76,7 +76,7 @@ class Module {
   virtual Tensor* get_tensor(const std::string& full_name) {
         return named_tensors_[full_name];
     }
-  void load(std::map<std::string, Tensor> param_dict, Device device = Device::CPU);
+  void load_state_dict(std::map<std::string, Tensor> param_dict, Device device = Device::CPU);
   virtual std::map<std::string, Tensor*> get_named_tensors_() const{
         return named_tensors_;
     }

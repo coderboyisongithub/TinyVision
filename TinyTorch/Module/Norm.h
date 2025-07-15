@@ -8,7 +8,6 @@ class BatchNorm2D : public Module {
   explicit BatchNorm2D(int32_t numFeatures, float eps = 1e-5,
                        float momentum = 0.1f, bool affine = true,
                        bool trackRunningStats = true);
-
   Tensor forward(Tensor &input) override;
   std::vector<Tensor *> parameters() override;
   std::vector<Tensor *> states() override;
@@ -34,5 +33,25 @@ class BatchNorm2D : public Module {
   Tensor runningMean_;
   Tensor runningVar_;
   int32_t numBatchesTracked_;
+};
+
+class GroupNorm : public Module {
+ public:
+  REGISTER_MODULE_NAME(GroupNorm)
+  explicit GroupNorm(int32_t numFeatures, float eps = 1e-5, int32_t num_groups = 1 ,bool affine = true);
+  Tensor forward(Tensor &input) override;
+  std::vector<Tensor *> parameters() override;
+  std::vector<Tensor *> states() override;
+  void resetParameters() override;
+  void zeroGrad() override;
+  Tensor &weights() { return weights_; }
+  Tensor &bias() { return bias_; }
+ private:
+  int32_t numFeatures_;
+  float eps_;
+  int32_t num_groups_;
+  bool affine_;
+  Tensor weights_;
+  Tensor bias_;
 };
 }

@@ -53,7 +53,7 @@ void Module::zeroGrad() {
   }
 }
 
-void Module::load(std::map<std::string, Tensor> param_dict, Device device) {
+void Module::load_state_dict(std::map<std::string, Tensor> param_dict, Device device) {
   for (auto &module : subModules_) {
     for (auto name : module.get().get_named_tensors_()) {
         std::string all_name = module.get().name().append("."+name.first);
@@ -63,23 +63,23 @@ void Module::load(std::map<std::string, Tensor> param_dict, Device device) {
           continue;
         }
         Tensor* dest_tensor = name.second;
-         Tensor src_tensor = param_dict[all_name];
-         if (src_tensor.shape() != dest_tensor->shape()){
-                    std::cerr << "Warning: Tensor " << all_name << " shape=[";
-                    for (size_t dim : dest_tensor->shape()) {
-                        std::cerr << dim << " ";
-                    }
-                    std::cerr << "] " << " is not same as the param your provide.";
-                    std::cerr << " shape=[";
-                    for (size_t dim : src_tensor.shape()) {
-                        std::cerr << dim << " ";
-                    }
-                    std::cerr << "] \n";
-                }
+        Tensor src_tensor = param_dict[all_name];
+        if (src_tensor.shape() != dest_tensor->shape()){
+            std::cerr << "Warning: Tensor " << all_name << " shape=[";
+            for (size_t dim : dest_tensor->shape()) {
+                std::cerr << dim << " ";
+            }
+            std::cerr << "] " << " is not same as the param your provide.";
+            std::cerr << " shape=[";
+            for (size_t dim : src_tensor.shape()) {
+                std::cerr << dim << " ";
+            }
+            std::cerr << "] \n";
+        }
         else{
-            std::cerr << "load " << all_name << " success\n";
             *dest_tensor = Tensor(std::move(src_tensor.data()));
             }
+        dest_tensor->to(device);
         }
     }
 }
@@ -284,6 +284,16 @@ Tensor MaxPool2D::forward(Tensor &input) {
   return Function::maxPool2d(input, kernelSize_, stride_, padding_);
 }
 
+Tensor AdaptiveAvgPool2D::forward(Tensor &input) {
+  auto kernel_size = calculate_kernel_size(input.shape(), output_size_);
+  return Function::avgPool2d(input, kernel_size, kernel_size, 0);
+}
+
+Tensor AvgPool2D::forward(Tensor &input) {
+  return Function::avgPool2d(input, kernelSize_, stride_, padding_);
+}
+
+
 Conv1D::Conv1D(int32_t inFeatures, int32_t outFeatures, Size1D kernelSize,
                Size1D stride, Size1D padding, bool bias)
     : inFeatures_(inFeatures),
@@ -378,6 +388,52 @@ void Conv2D::zeroGrad() {
   }
 }
 
+GroupNorm::GroupNorm(int32_t numFeatures, float eps, int32_t num_groups, bool affine)
+    : numFeatures_(numFeatures),
+      eps_(eps),
+      num_groups_(num_groups),
+      affine_(affine){
+  if (affine_) {
+    REGISTER_TENSOR(weights , Tensor::shape({numFeatures_}, true));
+    REGISTER_TENSOR(bias , Tensor::shape({numFeatures_}, true));
+  }
+  GroupNorm::resetParameters();
+}
+
+void GroupNorm::resetParameters() {
+  if (affine_) {
+    weights_.data().fill_(1.f);
+    bias_.data().fill_(0.f);
+  }
+}
+
+Tensor GroupNorm::forward(Tensor &input) {
+  assert(input.dim() == 4);
+  return Function::groupNorm(input, weights_, bias_, num_groups_, eps_);
+}
+
+std::vector<Tensor *> GroupNorm::parameters() {
+  if (affine_) {
+    return {&weights_, &bias_};
+  }
+  return {};
+}
+
+std::vector<Tensor *> GroupNorm::states() {
+  std::vector<Tensor *> ret;
+  if (affine_) {
+    ret.push_back(&weights_);
+    ret.push_back(&bias_);
+  }
+  return ret;
+}
+
+void GroupNorm::zeroGrad() {
+  if (affine_) {
+    weights_.zeroGrad();
+    bias_.zeroGrad();
+  }
+}
 BatchNorm2D::BatchNorm2D(int32_t numFeatures, float eps, float momentum,
                          bool affine, bool trackRunningStats)
     : numFeatures_(numFeatures),
