@@ -4,7 +4,8 @@
 #include <pybind11/operators.h>
 #include "Torch.h"
 #include "pymodule.h"
-
+#include "Init.h"
+#include "bind_init.cpp"
 using namespace TinyTorch;
 namespace py = pybind11;
 
@@ -322,7 +323,7 @@ py::module_ create_nn_submodule(py::module_ &m) {
       .def("registerModules", &nn::Module::registerModules)
       .def("eval", &nn::Module::eval)
       .def("train", &nn::Module::train, py::arg("mode") = true, "Set training mode")
-      .def("load", &nn::Module::load, py::arg("param_dict"), py::arg("device"))
+      .def("load_state_dict_", &nn::Module::load_state_dict, py::arg("param_dict"), py::arg("device"))
       .def("set_name", &nn::Module::set_name, py::arg("name"))
       .def("summary", [](const nn::Module& self) {
          py::print(self.getTopologyText());
@@ -341,7 +342,7 @@ py::module_ create_nn_submodule(py::module_ &m) {
                  stride: Stride of the convolution (default=1)
              )pbdoc")
       .def("forward", &nn::Conv2D::forward)
-      .def_property_readonly("weights", [](nn::Conv2D &self) {
+      .def_property_readonly("weight", [](nn::Conv2D &self) {
         return self.weights();
       }, "Get convolution weights")
       .def_property_readonly("bias", [](nn::Conv2D &self) {
@@ -354,13 +355,24 @@ py::module_ create_nn_submodule(py::module_ &m) {
 
   py::class_<nn::BatchNorm2D, nn::Module, std::shared_ptr<nn::BatchNorm2D>>(nn, "BatchNorm2d")
       .def(py::init<int, float, float, bool, bool>(), py::arg("numFeatures"), py::arg("eps") = 1e-5,
-           py::arg("momentum") = 0.1f,py::arg("affine") = true,py::arg("trackRunningStats") = true)
-      .def("forward", &nn::BatchNorm2D::forward);
+           py::arg("momentum") = 0.1f, py::arg("affine") = true, py::arg("trackRunningStats") = true)
+      .def("forward", &nn::BatchNorm2D::forward)
+      .def_property_readonly("weight", [](nn::BatchNorm2D &self) {
+           return self.weights();
+       }, "Get convolution weights")
+      .def_property_readonly("bias", [](nn::BatchNorm2D &self) {
+           return self.bias();
+      }, "Get convolution bias");
+
+  py::class_<nn::GroupNorm, nn::Module, std::shared_ptr<nn::GroupNorm>>(nn, "GroupNorm")
+      .def(py::init<int, float, int, bool>(), py::arg("numFeatures"), py::arg("eps") = 1e-5
+            ,py::arg("group_nums") = 1, py::arg("affine") = true)
+      .def("forward", &nn::GroupNorm::forward);
 
   py::class_<nn::Linear, nn::Module, std::shared_ptr<nn::Linear>>(nn, "Linear")
       .def(py::init<int, int>(), py::arg("in_channels"), py::arg("out_channels"))
       .def("forward", &nn::Linear::forward)
-      .def_property_readonly("weights", [](nn::Linear &self) {
+      .def_property_readonly("weight", [](nn::Linear &self) {
         return self.weights();
       }, "Get Linear weights")
       .def_property_readonly("bias", [](nn::Linear &self) {
@@ -400,16 +412,52 @@ py::module_ create_nn_submodule(py::module_ &m) {
              )pbdoc")
       .def("forward", &nn::MaxPool2D::forward);
 
+  py::class_<nn::AvgPool2D, nn::Module, std::shared_ptr<nn::AvgPool2D>>(nn, "AvgPool2d")
+      .def(py::init<Size2D, Size2D, Size2D>(),
+           py::arg("kernel_size") , py::arg("stride"),
+           py::arg("padding") = 0)
+      .def("forward", &nn::AvgPool2D::forward);
+
+  py::class_<nn::AdaptiveAvgPool2D, nn::Module, std::shared_ptr<nn::AdaptiveAvgPool2D>>(nn, "AdaptiveAvgPool2d")
+        .def(py::init([](py::object arg) {
+            if (py::isinstance<py::int_>(arg)) {
+                int32_t size = arg.cast<int32_t>();
+                return nn::AdaptiveAvgPool2D(Size2D(size, size));
+            } else if (py::isinstance<py::tuple>(arg)) {
+                py::tuple t = arg.cast<py::tuple>();
+                if (t.size() != 2) {
+                    throw std::runtime_error("Tuple must contain exactly two elements");
+                }
+                return nn::AdaptiveAvgPool2D(Size2D(
+                    t[0].cast<int32_t>(),
+                    t[1].cast<int32_t>()
+                ));
+            } else {
+                throw std::runtime_error("Invalid argument type for AdaptiveAvgPool2d");
+            }
+        }), py::arg("output_size"))
+        .def(py::init([](int32_t h, int32_t w) {
+            return nn::AdaptiveAvgPool2D(Size2D(h, w));
+        }), py::arg("h"), py::arg("w"))
+        .def("forward", &nn::AdaptiveAvgPool2D::forward);
+
   py::class_<nn::Sequential, nn::Module, std::shared_ptr<nn::Sequential>>(nn, "Sequential")
         .def(py::init<>())
         .def(py::init<std::initializer_list<std::shared_ptr<nn::Module>>>())
-        .def(py::init([](py::list py_modules) {
-               std::vector<std::shared_ptr<nn::Module>> modules;
-               for (auto handle : py_modules) {
-                 modules.push_back(handle.cast<std::shared_ptr<nn::Module>>());
-               }
-               return nn::Sequential(modules);
-             }), py::arg("modules") )
+        .def(py::init([](py::args args) {
+            if (args.size() == 1 && py::isinstance<py::list>(args[0])) {
+              std::vector<std::shared_ptr<nn::Module>> modules;
+              for (auto handle : args[0]) {
+                modules.push_back(handle.cast<std::shared_ptr<nn::Module>>());
+              }
+              return nn::Sequential(modules);
+            }
+            std::vector<std::shared_ptr<nn::Module>> modules;
+              for (auto handle : args) {
+                  modules.push_back(handle.cast<std::shared_ptr<nn::Module>>());
+              }
+            return nn::Sequential(modules);
+        }))
         .def("forward", &nn::Sequential::forward, py::arg("input"))
         .def("size", &nn::Sequential::getsize)
          .def("push_back",
@@ -620,7 +668,6 @@ void create_dataset_submodule(py::module_ &m) {
              "Get an item by index")
         .def("__getitem__", &data::Dataset::getItem, py::arg("index"),
              "Get an item by index");
-
 }
 
 void create_transforms_submodule(py::module_ &data){
@@ -745,4 +792,5 @@ PYBIND11_MODULE(pytt, m) {
     auto data = create_data_submodule(m);
     create_transforms_submodule(data);
     create_dataset_submodule(data);
+    create_init_submodule(nn);
 }

@@ -10,6 +10,26 @@
 
 namespace TinyTorch::nn {
 
+float Init::calculateGain(float a, NonlinearityMode nonlinearity) {
+    switch (nonlinearity) {
+        case LINEAR:
+        case CONV2D:
+            return 1.0f;
+        case SIGMOID:
+            return 1.0f;
+        case TANH:
+            return 5.0f / 3.0f;  // ≈1.6667
+        case RELU:
+            return std::sqrt(2.0f);  // √2 ≈1.4142
+        case LEAKY_RELU:
+            return std::sqrt(2.0f / (1.0f + a * a));
+        case NONE:
+            return calculateGain(a);
+        default:
+            throw std::invalid_argument("Unsupported nonlinearity type");
+    }
+}
+
 void Init::xavierUniform(Tensor &tensor, float gain, FanMode mode) {
     float bound = calculateXavierBound(tensor, gain, mode);
     uniform(tensor, -bound, bound);
@@ -50,6 +70,23 @@ void Init::kaimingUniform(Tensor &tensor, float a, FanMode mode) {
   auto stdValue  = gain / std::sqrt((float)fan);
   auto bound = std::sqrt(3.f) * stdValue ;
   uniform(tensor, -bound, bound);
+}
+
+void Init::constant(Tensor& tensor, float value) {
+    tensor.data().fill_(value);
+}
+
+void Init::kaimingNormal(Tensor& tensor, float a, NonlinearityMode nonlinearity, FanMode mode) {
+    auto fan = calculateFan(tensor, mode);
+    auto gain = calculateGain(a, nonlinearity);
+    auto std = gain / std::sqrt(static_cast<float>(fan));
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::normal_distribution<float> dist(0.0f, std);
+    auto data = tensor.data().data<float>();
+    for (int64_t i = 0; i < tensor.numel(); ++i) {
+        data[i] = dist(gen);
+    }
 }
 
 std::pair<int32_t, int32_t> Init::calculateFan(const Tensor &tensor) {

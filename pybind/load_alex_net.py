@@ -42,19 +42,9 @@ class AlexNetMNIST(Module):
 
 import torchvision.models as models
 
-# 加载预训练的 AlexNet 模型
 alexnet = models.alexnet(pretrained=True)
-# 获取模型权重（state_dict 是 OrderedDict）
 state_dict = alexnet.state_dict()
 
-# 创建字典：键为权重名称，值为 NumPy 数组
-weights_dict = {}
-
-for name, tensor in state_dict.items():
-    # 将 PyTorch 张量转换为 NumPy 数组（确保在 CPU 上）
-    weights_dict[name] = tt.Tensor(tensor.cpu().numpy())
-
-print(weights_dict.keys())
 p = AlexNetMNIST()
 p.summary()
-p.load_state_dict(weights_dict)
+p.load_state_dict(state_dict)

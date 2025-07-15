@@ -49,6 +49,7 @@ enum FunctionType {
   Function_Conv2D,
   Function_Conv1D,
   Function_BatchNorm,
+  Function_GroupNorm,
   Function_LayerNorm,
   Function_MSELoss,
   Function_BCELoss,
@@ -102,7 +103,9 @@ class Function : public std::enable_shared_from_this<Function> {
   static Tensor maxPool2d(const Tensor& input, Size2D kernelSize,
                           std::optional<Size2D> stride = std::nullopt,
                           Size2D padding = 0);
-
+  static Tensor avgPool2d(const Tensor& input, Size2D kernelSize,
+                          std::optional<Size2D> stride = std::nullopt,
+                          Size2D padding = 0);
   static Tensor conv2d(const Tensor& input, const Tensor& weight,
                        const Tensor& bias = {}, Size2D stride = 1,
                        Size2D padding = 0);
@@ -118,6 +121,10 @@ class Function : public std::enable_shared_from_this<Function> {
                           Tensor& runningVar, const Tensor& weight,
                           const Tensor& bias, bool training = false,
                           float momentum = 0.1f, float eps = 1e-5);
+
+  static Tensor groupNorm(const Tensor& input,const Tensor& weight,
+                          const Tensor& bias, int32_t num_groups,
+                          float eps);
 
   static Tensor nllloss(const Tensor& input, const Tensor& target,
                         LossReduction reduction = MEAN);
@@ -499,6 +506,19 @@ class FuncBatchNorm : public Function {
   float momentum_;
   float eps_;
   bool training_;
+};
+
+
+class FuncGroupNorm : public Function {
+ public:
+  explicit FuncGroupNorm(int32_t num_groups, float eps)
+      :eps_(eps), num_groups_(num_groups){}
+  DEFINE_FUNCTION_MEMBERS(Function_GroupNorm)
+ private:
+  std::vector<int32_t> dims_;
+  std::vector<int32_t> viewShape_;
+  int32_t num_groups_;
+  float eps_;
 };
 
 class FuncMSELoss : public Function {

@@ -180,6 +180,14 @@ Tensor Function::maxPool2d(const Tensor& input, Size2D kernelSize,
       ->callForward({&input});
 }
 
+Tensor Function::avgPool2d(const Tensor& input, Size2D kernelSize,
+                           std::optional<Size2D> stride, Size2D padding) {
+  return std::make_shared<FuncAvgPool2D>(
+             kernelSize, stride.has_value() ? stride.value() : kernelSize,
+             padding)
+      ->callForward({&input});
+}
+
 Tensor Function::conv2d(const Tensor& input, const Tensor& weight,
                         const Tensor& bias, Size2D stride, Size2D padding) {
   return std::make_shared<FuncConv2D>(stride, padding)
@@ -203,6 +211,12 @@ Tensor Function::batchNorm(const Tensor& input, Tensor& runningMean,
                            float eps) {
   return std::make_shared<FuncBatchNorm>(runningMean, runningVar, momentum, eps,
                                          training)
+      ->callForward({&input, &weight, &bias});
+}
+
+Tensor Function::groupNorm(const Tensor& input,const Tensor& weight,
+                           const Tensor& bias, int32_t num_groups, float eps) {
+  return std::make_shared<FuncGroupNorm>(num_groups, eps)
       ->callForward({&input, &weight, &bias});
 }
 
@@ -1170,7 +1184,6 @@ TensorImpl FuncBatchNorm::forward(const std::vector<const Tensor*>& inputs) {
   auto& input = inputs[0]->data();
   auto& weight = inputs[1]->data();
   auto& bias = inputs[2]->data();
-
   auto& shape = input.shape();
   ASSERT(shape.size() == 3 || shape.size() == 4);
 
@@ -1204,11 +1217,9 @@ TensorImpl FuncBatchNorm::forward(const std::vector<const Tensor*>& inputs) {
       var.data() = input.var(dims_, true, true);
     }
   }
-
   auto inputCentered = Tensor(input - mean.data());
   auto std = Tensor((var.data() + eps_).sqrt());
   auto inputNorm = Tensor(inputCentered / std);
-
   saveForBackward(inputs);
   saveForBackward({&inputNorm, &inputCentered, &std});
 
@@ -1220,6 +1231,7 @@ TensorImpl FuncBatchNorm::forward(const std::vector<const Tensor*>& inputs) {
   }
   return inputNorm.data();
 }
+
 
 std::vector<TensorImpl> FuncBatchNorm::backward(const TensorImpl& grad) {
   const auto& savedTensors = getSavedTensors();
@@ -1259,6 +1271,94 @@ std::vector<TensorImpl> FuncBatchNorm::backward(const TensorImpl& grad) {
   if (savedTensors[2].isRequiresGrad()) {
     auto dBias = grad.sum(dims_);
     ret.push_back(std::move(dBias));
+  }
+  return ret;
+}
+
+TensorImpl FuncGroupNorm::forward(const std::vector<const Tensor*>& inputs) {
+  auto& input = inputs[0]->data();  // [N, C, D1, D2, ..., Dk]
+  auto& weight = inputs[1]->data(); // [C]
+  auto& bias = inputs[2]->data();   // [C]
+  auto& shape = input.shape();
+  ASSERT(shape.size() >= 2 && "Input must have at least [N, C] dimensions");
+  ASSERT(shape[1] % num_groups_ == 0 && "Channels must be divisible by num_groups");
+  const int32_t N = shape[0];
+  const int32_t C = shape[1];
+  const int32_t G = num_groups_;
+  const int32_t GC = C / G;
+  int32_t spatial_size = 1;
+  for (size_t i = 2; i < shape.size(); ++i) {
+    spatial_size *= shape[i];
+  }
+  auto input_reshaped = input.view({N, G, GC, spatial_size});
+  TensorImpl mean = input_reshaped.mean({2, 3}, true);  // [N, G, 1, 1]
+  TensorImpl var = input_reshaped.var({2, 3}, false, true); // [N, G, 1, 1]
+  auto input_centered = input_reshaped - mean;
+  auto std = (var + eps_).sqrt();
+  auto input_norm = input_centered / std;
+
+  input_norm = input_norm.view(shape);
+  if (!weight.empty()) {
+    std::vector<int32_t> broadcast_shape(shape.size(), 1);
+    broadcast_shape[1] = C; // 通道维度
+    input_norm *= weight.view(broadcast_shape);
+  }
+  if (!bias.empty()) {
+    std::vector<int32_t> broadcast_shape(shape.size(), 1);
+    broadcast_shape[1] = C;
+    input_norm += bias.view(broadcast_shape);
+  }
+
+  saveForBackward(inputs);
+  auto input_norm_t = Tensor(std::move(input_norm));
+  auto input_centered_t = Tensor(std::move(input_centered.view(shape))); // 原始形状
+  auto std_t = Tensor(std::move(std)); // 保持 [N, G, 1, 1]
+  saveForBackward({&input_norm_t, &input_centered_t, &std_t});
+  return input_norm;
+}
+
+std::vector<TensorImpl> FuncGroupNorm::backward(const TensorImpl& grad) {
+  const auto& savedTensors = getSavedTensors();
+  auto& inputNorm = savedTensors[0].data();
+  auto& inputCentered = savedTensors[1].data();
+  auto& std = savedTensors[2].data();
+  const auto& shape = inputCentered.shape();
+  const int32_t N = shape[0];
+  const int32_t C = shape[1];
+  const int32_t G = num_groups_;
+  const int32_t GC = C / G;
+  int32_t spatial_size = 1;
+  for (size_t i = 2; i < shape.size(); ++i) {
+    spatial_size *= shape[i];
+  }
+  auto dy = grad.view({N, G, GC, spatial_size});
+  auto x_centered = inputCentered.view({N, G, GC, spatial_size});
+  auto inv_std = 1.0f / std;  // [N, G, 1, 1]
+  std::vector<TensorImpl> ret;
+  if (savedTensors[0].isRequiresGrad()) {
+    TensorImpl dx = dy * inv_std.view({N, G, 1, 1});
+    auto term1 = dy.sum({2, 3}, true);  // [N, G, 1, 1]
+    auto term2 = (dy * inputNorm.view({N, G, GC, spatial_size}))
+                     .sum({2, 3}, true);     // [N, G, 1, 1]
+    dx -= (term1 + x_centered * term2 * inv_std) / (GC * spatial_size);
+    dx = dx.view(shape);
+    ret.push_back(std::move(dx));
+  }
+  if (savedTensors[1].isRequiresGrad()) {
+    auto dweight = (grad * inputNorm).sum(0);
+    for (size_t i = 2; i < shape.size(); ++i) {
+      dweight = dweight.sum(i, true);
+    }
+    dweight = dweight.view({C});
+    ret.push_back(std::move(dweight));
+  }
+  if (savedTensors[2].isRequiresGrad()) {
+    auto dbias = grad.sum(0);
+    for (size_t i = 2; i < shape.size(); ++i) {
+      dbias = dbias.sum(i, true);
+    }
+    dbias = dbias.view({C});
+    ret.push_back(std::move(dbias));
   }
   return ret;
 }
