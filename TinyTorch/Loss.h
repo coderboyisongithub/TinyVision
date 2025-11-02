@@ -36,12 +36,14 @@ class MSELoss : public Loss {
  public:
   explicit MSELoss(const LossReduction reduction = MEAN) : Loss(reduction) {}
   Tensor forward(Tensor &input, Tensor &target) override;
+  REGISTER_MODULE_NAME(MSELoss)
 };
 
 class NLLLoss : public Loss {
  public:
   explicit NLLLoss(const LossReduction reduction = MEAN) : Loss(reduction) {}
   Tensor forward(Tensor &input, Tensor &target) override;
+  REGISTER_MODULE_NAME(NLLLoss)
 };
 
 }  // namespace nn
