@@ -359,7 +359,16 @@ train(model, "cuda", train_loader, optimizer, i)
 test(model, "cuda", test_loader)
 ```
 
-## Build
+## Building instruction
+
+
+### windows (x64) 🪟
+
+- In powershell run `.\bootstrap.ps1`
+- Wait for terminal to ask for target generators.
+
+### linux
+
 ```bash
 mkdir build
 cmake -B ./build -DCMAKE_BUILD_TYPE=Release
