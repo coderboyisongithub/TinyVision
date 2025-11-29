@@ -59,11 +59,10 @@ else
         exit 1
     }
 
+    Write-Host "Installing dependency" -ForegroundColor Yellow
+    & vcpkg install 
 }
 
-
-Write-Host "Installing dependency" -ForegroundColor Yellow
-& vcpkg install 
 
 # vcpkg section up.
 
@@ -98,27 +97,14 @@ Write-Host "switching to build directory" -ForegroundColor DarkYellow
 & mkdir build -ErrorAction ignore
 & cd build 
 
-$selected_generator=Read-Host "copy and paste the generator from the list"
+$selected_generator=Read-Host "copy and paste the genrator from the list"
 
-Write-host "selected generator is: $selected_generator" -BackgroundColor Cyan
-do {
-    # Prompt user for input
-    $response = Read-Host "Do you want to continue? (yes/no)"
+Write-host "selected generator is: $selected_generator" -BackgroundColor DarkYellow
 
-    # Convert input to lowercase for case-insensitive comparison
-    $response = $response.Trim().ToLower()
-
-    if ($response -eq "yes") {
-        Write-Host "Proceeding..." -ForegroundColor Green
-        break  # Exit loop
-    }
-    elseif ($response -eq "no") {
-        Write-Host "You selected No. Asking again..." -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Invalid input. Please enter 'yes' or 'no'." -ForegroundColor Red
-    }
-
-} while ($true)  # Infinite loop until 'yes' is entered
- 
-& cmake .. -G $selected_generator -DUSE_CUDNN=false -DUSE_CUDA=false -DCMAKE_BUILD_TYPE=Release
+& cmake .. -G $selected_generator `
+  -DUSE_CUDNN=false `
+  -DUSE_CUDA=false `
+  -DUSE_BLAS=true `
+  -DUSE_OPENCV=true `
+  -DUSE_PYBIND=false `
+  -DCMAKE_BUILD_TYPE=Release

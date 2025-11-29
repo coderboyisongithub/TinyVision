@@ -1,4 +1,7 @@
+set(CMAKE_TOOLCHAIN_FILE "./vcpkg/scripts/buildsystems/vcpkg.cmake")
+
 cmake_minimum_required(VERSION 3.10)
+
 project(TinyTorch)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -31,10 +34,13 @@ endif ()
 
 if (${USE_OPENCV})
     # you need set environment path called OpenCV_DIR, usually path/opencv/build
-    if(NOT DEFINED ENV{OpenCV_DIR})
-        message(FATAL_ERROR "OpenCV_DIR environment variable is not set. Please set it to the path of your OpenCV build directory.")
-    endif()
-    find_package(OpenCV REQUIRED COMPONENTS core imgcodecs)
+   # if(NOT DEFINED ENV{OpenCV_DIR})
+   #     message(FATAL_ERROR "OpenCV_DIR environment variable is not set. Please set it to the path of your OpenCV build directory.")
+   # endif()
+
+
+   # set(OpenCV_ROOT "${VCPKG_INSTALLED_DIR}/x64-windows/share/opencv4")
+    find_package(OpenCV REQUIRED)
     set(OpenCV_STATIC ON)
     message(STATUS "OpenCV library status:")
     message(STATUS "    version: ${OpenCV_VERSION}")
@@ -45,14 +51,14 @@ if (${USE_OPENCV})
 endif()
 
 
-include(FetchContent)
-FetchContent_Declare(
-        json
-        GIT_REPOSITORY https://github.com/nlohmann/json.git
-        GIT_TAG v3.12.0 # 或者任何其他版本标签
-)
+#include(FetchContent)
+#FetchContent_Declare(
+ #       json
+  #      GIT_REPOSITORY https://github.com/nlohmann/json.git
+   #     GIT_TAG v3.12.0 # 或者任何其他版本标签
+#)
 # 确保库被获取并使其准备好被使用
-FetchContent_MakeAvailable(json)
+#FetchContent_MakeAvailable(json)
 
 
 # 设置CUDA的编译标志
