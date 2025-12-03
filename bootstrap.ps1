@@ -59,8 +59,8 @@ else
         exit 1
     }
 
-    Write-Host "Installing dependency" -ForegroundColor Yellow
-    & vcpkg install 
+  #  Write-Host "Installing dependency" -ForegroundColor Yellow
+   # & vcpkg install 
 }
 
 
@@ -107,4 +107,5 @@ Write-host "selected generator is: $selected_generator" -BackgroundColor DarkYel
   -DUSE_BLAS=true `
   -DUSE_OPENCV=true `
   -DUSE_PYBIND=false `
+  -DBUILD_TEST=flase `
   -DCMAKE_BUILD_TYPE=Release

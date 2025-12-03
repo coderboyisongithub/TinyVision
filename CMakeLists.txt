@@ -63,8 +63,7 @@ endif()
 
 # 设置CUDA的编译标志
 #set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --keep --keep-dir tmp -gencode arch=compute_50,code=sm_50 -v")
-add_subdirectory(TinyTorch)
-add_subdirectory(demo)
+
 
 option(BUILD_TEST "Whether or not to build the tests" ON)
 if (${BUILD_TEST})
@@ -85,3 +84,5 @@ if(USE_PYBIND)
     add_compile_definitions(USE_PYBIND)
     add_subdirectory(pybind/src)  # Python绑定
 endif()
+add_subdirectory(TinyTorch)
+add_subdirectory(demo)

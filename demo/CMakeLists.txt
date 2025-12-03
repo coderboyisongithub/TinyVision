@@ -1,3 +1,5 @@
+set(CMAKE_TOOLCHAIN_FILE "./vcpkg/scripts/buildsystems/vcpkg.cmake")
+
 cmake_minimum_required(VERSION 3.10)
 project(TinyTorch_demo)
 
@@ -22,7 +24,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_link_libraries(${PROJECT_NAME} TinyTorch)
-
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME}  nlohmann_json::nlohmann_json)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 SET(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/../bin)
 
