@@ -1257,6 +1257,7 @@ void TensorImpl::indexPut_(const std::vector<int32_t> &indices, float val) {
     dataIdx += (idx >= 0 ? idx : idx + shape_[i]) * strides_[i];
   }
   int32_t dimStride = strides_[len - 1];
+  #ifdef USE_CUDA
   if (this->type_ == Dtype::float16) {
     auto *out =
       reinterpret_cast<float *>(&reinterpret_cast<half*>(data_)[dataIdx]);
@@ -1268,6 +1269,7 @@ void TensorImpl::indexPut_(const std::vector<int32_t> &indices, float val) {
     ops_->fillConstant_(out, val,
                         dimStride, Dtype::bfloat16);
   }
+#endif
   if (this->type_ == Dtype::float32)
     ops_->fillConstant_(&data_[dataIdx], val, dimStride);
 
@@ -1285,6 +1287,7 @@ void TensorImpl::indexPut_(const std::vector<int32_t> &indices,
   }
   int32_t dimStride = strides_[len - 1];
   ASSERT(val.elemCount_ == dimStride);
+  #ifdef USE_CUDA
   if (this->type() == Dtype::float16)
     copyToDevice(&(reinterpret_cast<half*>(data_))[dataIdx], val.data_,
                  dimStride * sizeof(half),
@@ -1294,6 +1297,8 @@ void TensorImpl::indexPut_(const std::vector<int32_t> &indices,
                  dimStride * sizeof(nv_bfloat16),
                   val.device_);
   else
+  #endif
+  if (this->type() == Dtype::float32)
     copyToDevice(&data_[dataIdx], val.data_,
                  dimStride * sizeof(float),
                   val.device_);
@@ -1393,6 +1398,7 @@ TensorImpl TensorImpl::stack(
 
   for (int32_t i = 0; i < tensors.size(); i++) {
     const auto &t = tensors[i].get();
+     #ifdef USE_CUDA
     if (t.type() == Dtype::float16){
         auto *srcPtr = reinterpret_cast<half*>(t.data_);
         auto dstPtr = reinterpret_cast<half*>(retTensor.data_) + i * innerSize;
@@ -1401,7 +1407,9 @@ TensorImpl TensorImpl::stack(
           srcPtr += innerSize;
           dstPtr += tensors.size() * innerSize;
         }
-    }else{
+    }else
+    #endif
+    {
         auto *srcPtr = t.data_;
         auto dstPtr = retTensor.data_ + i * innerSize;
         for (int32_t j = 0; j < outerSize; j++) {

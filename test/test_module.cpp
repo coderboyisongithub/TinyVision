@@ -87,7 +87,7 @@ TEST(TEST_Module, batchNorm2d) {
   EXPECT_FLOAT_VEC_NEAR(runningVar.data().toList(),
                         {5.15714, 5.15714, 5.15714});
 }
-
+#ifdef  USE_CUDA
 TEST(TEST_Module, multiselfattention_is_casual) {
     manualSeed(2024);
     const int batch_size = 2;
@@ -164,3 +164,4 @@ TEST(TEST_Module, multiselfattention_non_casual) {
     EXPECT_FLOAT_VEC_NEAR(out_b_grad_cpu,
                           out_b_grad_cuda);
 }
+#endif

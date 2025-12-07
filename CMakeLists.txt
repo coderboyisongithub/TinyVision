@@ -4,7 +4,7 @@ project(TinyTorch)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(USE_CUDA "Use CUDA" ON)
+option(USE_CUDA "Use CUDA" OFF)
 option(USE_BLAS "Use BLAS" ON)
 option(USE_OPENCV "Use OPENCV" ON)
 option(USE_CUDNN "Use cuDNN" OFF)

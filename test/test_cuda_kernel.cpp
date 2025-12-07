@@ -396,7 +396,7 @@ TEST(TEST_cuda_kernel, concat_cuda) {
  }
 
 }
-
+#ifdef  USE_CUDA
 TEST(TEST_Function, leakyrelu_cuda) {
  Tensor a = Tensor(TensorImpl::ones({32,3,256,256},Device::CPU),true);
  Tensor grad = Tensor(TensorImpl::randn({32,3,256,256},Device::CPU),true);
@@ -420,7 +420,9 @@ TEST(TEST_Function, leakyrelu_cuda) {
  for (size_t i = 0; i < gp.size(); ++i) {
    ASSERT_NEAR(gp[i], gp1[i], 1e-3);
  }
+
 }
+#endif
 
 TEST(TEST_cuda_kernel, func_basic_im2col_col2im_1d) {
  {

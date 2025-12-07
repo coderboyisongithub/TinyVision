@@ -8,7 +8,7 @@ using namespace TinyTorch;
 
 class BasicBlock : public nn::Module {
   public:
-
+   REGISTER_MODULE_NAME(BasicBlock)
     BasicBlock(int32_t inplanes,std::vector<int32_t> planes):
      conv1(inplanes, planes[0], 1, 1, 0, false),
      bn1(planes[0]),
@@ -20,7 +20,7 @@ class BasicBlock : public nn::Module {
                conv2,bn2 });
       initialize_weights();
      }
-    std::string name() const override { return "BasicBlock"; }
+ //std::string name() const override { return "BasicBlock"; }
   Tensor forward(Tensor &x) override {
       auto residual = x;
       x = conv1(x);
@@ -51,6 +51,7 @@ class BasicBlock : public nn::Module {
 
 class DarkNet : public nn::Module {
   public:
+   REGISTER_MODULE_NAME(DarkNet)
     DarkNet(const std::vector<int>& layers = {1, 2, 8, 8, 4}):
       inplanes(32),
       conv1(3, inplanes, 3, 1, 1, false),
@@ -66,7 +67,7 @@ class DarkNet : public nn::Module {
         registerModules({conv1, bn1,layer1, layer2, layer3, layer4, layer5});
         initialize_weights();
     }
-     std::string name() const override { return "DarkNet"; }
+    //std::string name() const override { return "DarkNet"; }
     std::vector<Tensor> multi_return_forward(Tensor &x) override {
         x = conv1(x);
         x = bn1(x);
@@ -125,6 +126,7 @@ class DarkNet : public nn::Module {
 
 class YoloBody : public nn::Module {
   public:
+   REGISTER_MODULE_NAME(YoloBody)
     YoloBody(std::vector<int32_t> anchors_mask_length, int32_t num_classes,DarkNet backbone, bool pretrained):
        num_classes_(num_classes),
        backbone_(backbone)
@@ -207,6 +209,7 @@ class YoloBody : public nn::Module {
 
 class YoloLoss : public nn::Module {
     public:
+     REGISTER_MODULE_NAME(YoloLoss)
        YoloLoss( int32_t num_classes, Shape input_shape, std::vector<std::vector<int32_t>> anchors):
             num_classes_(num_classes),
             box_ratio_(0.05),

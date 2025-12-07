@@ -79,6 +79,8 @@ if(MSVC)
     target_compile_options(TinyTorch_pybind PRIVATE /bigobj)
 endif()
 
+add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
+add_link_options(-fsanitize=address)
 # 安装规则
 install(TARGETS TinyTorch_pybind
         LIBRARY DESTINATION lib/python/site-packages

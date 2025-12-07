@@ -20,8 +20,11 @@ class fp32Net :public nn::Module {
 
 // https://github.com/pytorch/examples/blob/main/mnist/main.py
 class Net : public nn::Module {
+
  public:
+  REGISTER_MODULE_NAME(Net)
   Net()
+
   {
     registerModules({conv1,conv21,fc1,fc2,dropout1,dropout2});
     this->to(Device::CUDA);

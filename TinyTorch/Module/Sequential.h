@@ -12,24 +12,23 @@ class Sequential : public Module {
     int end;
 
     Slice(std::initializer_list<int> list) {
-    if (list.size() != 2) {
-      throw std::invalid_argument("Slice must have exactly two integers");
-    }
-    start = *list.begin();
-    end = *(list.begin() + 1);
+      if (list.size() != 2) {
+        throw std::invalid_argument("Slice must have exactly two integers");
+      }
+      start = *list.begin();
+      end = *(list.begin() + 1);
     }
   };
 
-  template <typename... Modules,
-            typename = std::enable_if_t<(std::is_same_v<std::decay_t<Modules>, std::shared_ptr<Module>> && ...)>>
+  template <typename... Modules>
   explicit Sequential(Modules &&...modules) {
     modules_.reserve(sizeof...(Modules));
     pushBack(std::forward<Modules>(modules)...);
   }
   explicit Sequential(std::vector<std::shared_ptr<Module>> modules) {
     for (size_t i = 0; i < modules.size(); ++i) {
-        auto& module = modules[i];
-        module->set_name(std::to_string(i));
+      auto& module = modules[i];
+      module->set_name(std::to_string(i));
     }
     modules_ = std::move(modules);
   }
@@ -46,7 +45,7 @@ class Sequential : public Module {
   template <typename ModuleType>
   void pushBack(ModuleType &&module) {
     int index = modules_.size();
-    module->set_name(std::to_string(index++));
+    module.set_name(std::to_string(index++));
     modules_.push_back(
         std::make_shared<ModuleType>(std::forward<ModuleType>(module)));
   }
@@ -81,9 +80,9 @@ class Sequential : public Module {
     return result;
   }
   auto begin() { return modules_.begin(); }
-    auto end() { return modules_.end(); }
-    auto begin() const { return modules_.begin(); }
-    auto end() const { return modules_.end(); }
+  auto end() { return modules_.end(); }
+  auto begin() const { return modules_.begin(); }
+  auto end() const { return modules_.end(); }
  private:
   void setTraining(bool mode) override;
   template <typename First, typename Second, typename... Rest>
@@ -93,11 +92,11 @@ class Sequential : public Module {
   }
   void pushBack() {}
   std::vector<std::shared_ptr<Module>> modules_;
-    void getTopologyTextHelper(std::stringstream& ss, int depth) const override {
-        ss << std::string(depth * 2, ' ') << "|-- " << name() << " (" << class_name() << ")" <<std::endl;
-        for (const auto& module : modules_) {
-            module->getTopologyTextHelper(ss, depth + 1);
-        }
+  void getTopologyTextHelper(std::stringstream& ss, int depth) const override {
+    ss << std::string(depth * 2, ' ') << "|-- " << name() << " (" << class_name() << ")" <<std::endl;
+    for (const auto& module : modules_) {
+      module->getTopologyTextHelper(ss, depth + 1);
     }
+  }
 };
 }
