@@ -19,15 +19,23 @@ add_executable(${PROJECT_NAME}
         main.cpp
         tools/tools.cpp)
 
-target_include_directories(${PROJECT_NAME} PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../TinyTorch ${json_SOURCE_DIR}/include
-)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../TinyTorch)
 
 target_link_libraries(${PROJECT_NAME} TinyTorch)
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME}  nlohmann_json::nlohmann_json)
 set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 SET(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/../bin)
+
+if (${USE_OPENCV})
+    find_package(OpenCV REQUIRED)
+   # set(OpenCV_STATIC ON)
+    message(STATUS "OpenCV library status:")
+    message(STATUS "    libraries: ${OpenCV_LIBS}")
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(${PROJECT_NAME}  ${OpenCV_LIBS})
+    
+endif ()
 
 if (${USE_BLAS})
     # copy libopenblas.dll
