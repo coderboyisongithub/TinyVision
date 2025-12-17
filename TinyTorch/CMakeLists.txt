@@ -70,7 +70,7 @@ endif ()
 
 if (${USE_BLAS})
     add_definitions(-DUSE_BLAS)
-    if (MSVC)
+    if (WIN32)
     find_package(OpenBLAS CONFIG REQUIRED)
     target_link_libraries(${PROJECT_NAME} PRIVATE OpenBLAS::OpenBLAS)
      

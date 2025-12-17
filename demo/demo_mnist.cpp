@@ -27,7 +27,7 @@ class Net : public nn::Module {
 
   {
     registerModules({conv1,conv21,fc1,fc2,dropout1,dropout2});
-    this->to(Device::CUDA);
+    this->to(Device::CPU);
     this->to(Dtype::float16);
   }
   Tensor forward(Tensor &x) override {
