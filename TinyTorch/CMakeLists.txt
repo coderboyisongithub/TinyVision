@@ -1,3 +1,5 @@
+set(CMAKE_TOOLCHAIN_FILE "./vcpkg/scripts/buildsystems/vcpkg.cmake")
+
 cmake_minimum_required(VERSION 3.10)
 project(TinyTorch)
 
@@ -52,8 +54,13 @@ if (${USE_CUDNN})
 endif ()
 
 if (${USE_OPENCV})
+    find_package(OpenCV REQUIRED)
+   # set(OpenCV_STATIC ON)
+    message(STATUS "OpenCV library status:")
+    message(STATUS "    libraries: ${OpenCV_LIBS}")
     include_directories(${OpenCV_INCLUDE_DIRS})
-    target_link_libraries(${PROJECT_NAME} ${OpenCV_3RDPARTY_LIBS} ${OpenCV_LIBS})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCV_LIBS})
+    
 endif ()
 
 if (${USE_PYBIND})
@@ -64,8 +71,9 @@ endif ()
 if (${USE_BLAS})
     add_definitions(-DUSE_BLAS)
     if (MSVC)
-        target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/OpenBLAS/win64-64/include)
-        target_link_libraries(${PROJECT_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/OpenBLAS/win64-64/lib/libopenblas.dll.a")
+    find_package(OpenBLAS CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME} PRIVATE OpenBLAS::OpenBLAS)
+     
     elseif (APPLE)
         find_library(ACCELERATE_LIBRARY Accelerate)
         target_link_libraries(${PROJECT_NAME} ${ACCELERATE_LIBRARY})

@@ -107,5 +107,5 @@ Write-host "selected generator is: $selected_generator" -BackgroundColor DarkYel
   -DUSE_BLAS=true `
   -DUSE_OPENCV=true `
   -DUSE_PYBIND=false `
-  -DBUILD_TEST=flase `
+  -DBUILD_TEST=false `
   -DCMAKE_BUILD_TYPE=Release
