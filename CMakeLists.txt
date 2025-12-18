@@ -2,7 +2,8 @@ set(CMAKE_TOOLCHAIN_FILE "./vcpkg/scripts/buildsystems/vcpkg.cmake")
 
 cmake_minimum_required(VERSION 3.10)
 
-project(TinyTorch)
+
+
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,6 +13,11 @@ option(USE_BLAS "Use BLAS" ON)
 option(USE_OPENCV "Use OPENCV" ON)
 option(USE_CUDNN "Use cuDNN" OFF)
 option(USE_PYBIND "Use pybind" ON)
+if(${USE_PYBIND}) 
+list(APPEND VCPKG_MANIFEST_FEATURES "pythonbindings") 
+endif()
+
+
 
 if (APPLE)
     set(USE_CUDA OFF)
@@ -24,6 +30,8 @@ message(STATUS "USE_OPENCV ${USE_OPENCV}")
 message(STATUS "USE_CUDNN ${USE_CUDNN}")
 message(STATUS "USE_PYBIND ${USE_PYBIND}")
 
+
+project(TinyTorch)
 if (${USE_CUDA})
     add_definitions(-DUSE_CUDA)
 endif ()
@@ -82,6 +90,7 @@ endif ()
 
 if(USE_PYBIND)
     add_compile_definitions(USE_PYBIND)
+   find_package(pybind11 CONFIG REQUIRED)
     add_subdirectory(pybind/src)  # Python绑定
 endif()
 add_subdirectory(TinyTorch)

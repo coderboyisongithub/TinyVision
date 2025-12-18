@@ -1,6 +1,10 @@
 set(CMAKE_TOOLCHAIN_FILE "./vcpkg/scripts/buildsystems/vcpkg.cmake")
 
 cmake_minimum_required(VERSION 3.10)
+
+set(VCPKG_VERBOSE "OFF")
+
+
 project(TinyTorch)
 
 
@@ -64,6 +68,7 @@ if (${USE_OPENCV})
 endif ()
 
 if (${USE_PYBIND})
+
     target_compile_definitions(TinyTorch PRIVATE USE_PYBIND)
     add_compile_definitions(USE_PYBIND)
 endif ()
