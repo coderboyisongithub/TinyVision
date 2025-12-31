@@ -13,6 +13,10 @@
         "tiff"
       ]
     }
-
-  ]
+  ],
+  "features":
+   { 
+    "pythonbindings":  { "description": "Enable Python bindings using pybind11",   "dependencies": [ "pybind11" ] },
+    "cudagpu":{"description":"enable cuda ", "dependencies":["cuda","cudnn"]}
+  }
 }

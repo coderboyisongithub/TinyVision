@@ -20,6 +20,41 @@ Tiny deep learning training framework implemented from scratch in C++ that follo
 [![CMake MacOS](https://github.com/keith2018/TinyTorch/actions/workflows/cmake_macos.yml/badge.svg)](https://github.com/keith2018/TinyTorch/actions/workflows/cmake_macos.yml)
 [![CMake Windows](https://github.com/keith2018/TinyTorch/actions/workflows/cmake_windows.yml/badge.svg)](https://github.com/keith2018/TinyTorch/actions/workflows/cmake_windows.yml)
 
+
+## Building instruction
+
+
+### windows (x64) 🪟
+
+- Configuration  will automatically managed by build script
+- **Release Mode**(default: cuda off , pybind off)
+  - `.\bootstrap.ps1` **without CUDA and Pybind** 
+  - `.\bootstrap.ps1 -cuda "true" -pybind "true"` **with CUDA and Pybind**
+- **Debug Mode**
+  - `.\bootstrap.ps1 -build "Debug"` **without CUDA and Pybind** 
+  - `.\bootstrap.ps1  -build "Debug -cuda "true" -pybind "true"` **with CUDA and Pybind**
+
+- Wait for terminal to ask for target generators.
+
+### linux
+
+```bash
+mkdir build
+cmake -B ./build -DCMAKE_BUILD_TYPE=Release
+cmake --build ./build --config Release
+```
+
+## Demo
+```bash
+cd demo/bin
+./TinyTorch_demo
+```
+
+## Test
+```bash
+cd build
+ctest
+```
 ## Components
 
 - Module
@@ -359,33 +394,7 @@ train(model, "cuda", train_loader, optimizer, i)
 test(model, "cuda", test_loader)
 ```
 
-## Building instruction
 
-
-### windows (x64) 🪟
-
-- In powershell run `.\bootstrap.ps1`
-- Wait for terminal to ask for target generators.
-
-### linux
-
-```bash
-mkdir build
-cmake -B ./build -DCMAKE_BUILD_TYPE=Release
-cmake --build ./build --config Release
-```
-
-## Demo
-```bash
-cd demo/bin
-./TinyTorch_demo
-```
-
-## Test
-```bash
-cd build
-ctest
-```
 
 ## Dependencies
 - `CUDA` (optional for nvidia CUDA support)

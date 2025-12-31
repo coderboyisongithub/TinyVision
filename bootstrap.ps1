@@ -1,3 +1,4 @@
+param(${build}="Release",${pybind}="false",${cuda}="false")
 $asciiart=@"                                                                                                    
  ...                 ...................     ....          ........     .........................:. 
  ... @@@@@@@@@@:@@@@ .........:......... @@@  ... @@@#@@@@ ........ @@@ ........................... 
@@ -90,7 +91,7 @@ if (-not $cmakeExe)
 
 # Run CMake to list available generators
 
-$cmakeGenerators = & cmake --help | Select-String "Generators" -Context 0,50 | Out-String
+$cmakeGenerators = & cmake --help | Select-String "Generators" -Context 0,40 | Out-String
 Write-Host "Available CMake Generators: $cmakeGenerators" 
 
 Write-Host "switching to build directory" -ForegroundColor DarkYellow
@@ -106,6 +107,6 @@ Write-host "selected generator is: $selected_generator" -BackgroundColor DarkYel
   -DUSE_CUDA=false `
   -DUSE_BLAS=true `
   -DUSE_OPENCV=true `
-  -DUSE_PYBIND=false `
-  -DBUILD_TEST=false `
-  -DCMAKE_BUILD_TYPE=Release
+  -DUSE_PYBIND="$pybind" `
+  -DBUILD_TEST=true `
+  -DCMAKE_BUILD_TYPE="$build"

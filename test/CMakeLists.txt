@@ -35,9 +35,18 @@ target_link_libraries(${PROJECT_NAME} TinyTorch gtest_main)
 
 include(GoogleTest)
 
+if (${USE_OPENCV})
+    find_package(OpenCV REQUIRED)
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(${PROJECT_NAME}  ${OpenCV_LIBS})
+    
+endif ()
+
 if (${USE_BLAS})
     # copy libopenblas.dll
-    if (MSVC)
+    if (WIN32)
+    find_package(OpenBLAS CONFIG REQUIRED)
+    target_link_libraries(${PROJECT_NAME}  OpenBLAS::OpenBLAS)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy
                 ${CMAKE_CURRENT_SOURCE_DIR}/../thirdparty/OpenBLAS/win64-64/bin/libopenblas.dll
